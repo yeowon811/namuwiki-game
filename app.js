@@ -58,7 +58,8 @@ window.addEventListener('message', (e) => {
     console.warn('[확장 프로그램]', msg.message);
   }
 });
-if (document.documentElement.dataset.nrExt) toExt('PING');
+// 확장 프로그램의 내용 스크립트가 늦게 준비될 수 있으니 응답이 올 때까지 몇 번 물어봄
+[0, 300, 1000, 2500, 5000].forEach((ms) => setTimeout(() => { if (!ext.ready) toExt('PING'); }, ms));
 
 const raceKey = () => (room ? `${room.code}/${room.round}` : null);
 const extRaceIsCurrent = () => ext.race && room && ext.race.code === room.code && ext.race.round === room.round && ext.race.playerId === playerId;

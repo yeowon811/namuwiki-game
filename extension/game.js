@@ -1,17 +1,19 @@
 // 게임 페이지에서 실행: 게임 페이지(window.postMessage) ↔ 확장 프로그램(chrome.runtime) 중계
 (() => {
   const VERSION = chrome.runtime.getManifest().version;
-  document.documentElement.dataset.nrExt = VERSION;
 
-  const post = (type, data = {}) => window.postMessage({ source: 'nr-ext', type, ...data }, location.origin);
+  const post = (type, data = {}) => window.postMessage({ source: 'nr-ext', type, ...data }, '*');
 
   async function hello() {
+    let race = null;
     try {
       const res = await chrome.runtime.sendMessage({ type: 'GAME_HELLO' });
-      post('READY', { version: VERSION, race: res?.race ?? null });
+      race = res?.race ?? null;
     } catch (e) {
-      post('ERROR', { message: String(e) });
+      // 백그라운드가 잠깐 응답하지 않아도 설치된 것은 알려줌
+      console.warn('[나무위키 레이스 도우미]', e);
     }
+    post('READY', { version: VERSION, race });
   }
 
   window.addEventListener('message', async (e) => {
