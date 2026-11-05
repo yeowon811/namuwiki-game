@@ -5,184 +5,260 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>나무위키 레이스</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap" />
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" />
+  <link rel="stylesheet" href="style.css?v=5" />
 </head>
 <body>
+  <!-- 아이콘 모음 (Ant Design의 Outlined 스타일을 따라 그린 선 아이콘) -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <symbol id="i-flag" viewBox="0 0 24 24"><path d="M5.5 21V3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M6.5 4.5h12l-2.6 4.25 2.6 4.25h-12z" fill="currentColor"/></symbol>
+      <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+      <symbol id="i-export" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 7.5V12l3 2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+      <symbol id="i-aim" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/></symbol>
+      <symbol id="i-trophy" viewBox="0 0 24 24"><path d="M7 4h10v5a5 5 0 0 1-10 0V4zM7 6H4v1.5A3.5 3.5 0 0 0 7.5 11M17 6h3v1.5a3.5 3.5 0 0 1-3.5 3.5M12 14v3M8.5 20h7M9.5 17h5v3h-5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+      <symbol id="i-team" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.8a3.5 3.5 0 0 1 0 6.4M18 14.5a6.5 6.5 0 0 1 3.5 5.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></symbol>
+      <symbol id="i-setting" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h2M10 17h10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="16" cy="7" r="2" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="8" cy="17" r="2" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+      <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="currentColor"/><path d="M12 11v6" stroke="#fff" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="7.5" r="1.2" fill="#fff"/></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="currentColor"/><path d="M8 12.2l2.8 2.8L16 9.5" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-warn" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="currentColor"/><path d="M12 7v6" stroke="#fff" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="16.5" r="1.2" fill="#fff"/></symbol>
+      <symbol id="i-close" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="currentColor"/><path d="M9 9l6 6M15 9l-6 6" stroke="#fff" stroke-width="2" stroke-linecap="round"/></symbol>
+      <symbol id="i-logout" viewBox="0 0 24 24"><path d="M10 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h5M15 8l4 4-4 4M19 12H9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-right" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-down" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13l10-6.5z" fill="currentColor"/></symbol>
+      <symbol id="i-redo" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+      <symbol id="i-api" viewBox="0 0 24 24"><path d="M9 3v4M15 3v4M7 7h10v4a5 5 0 0 1-10 0V7zM12 16v5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    </defs>
+  </svg>
+
+  <!-- 상단 헤더 (Layout.Header) -->
+  <header class="app-header">
+    <div class="app-header-inner">
+      <div class="brand"><span class="brand-mark"><svg class="ic"><use href="#i-flag"/></svg></span>나무위키 레이스</div>
+      <a class="header-link" href="https://github.com/yeowon811/namuwiki-game" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </header>
+
   <main id="app">
     <!-- 홈 -->
     <section id="screen-home" class="screen">
-      <header class="hero">
-        <div class="logo">🏁</div>
-        <h1>나무위키 레이스</h1>
-        <p class="muted">모두 같은 시작 문서에서 출발해, 링크만 타고 목표 문서까지!</p>
-      </header>
-      <div class="card">
-        <label class="field">
-          <span>닉네임</span>
-          <input id="name" maxlength="16" placeholder="닉네임 입력" autocomplete="nickname" />
-        </label>
-        <button id="btn-create" class="btn primary">방 만들기</button>
-        <div class="divider"><span>또는</span></div>
-        <div class="row">
-          <input id="code" maxlength="4" placeholder="방 코드" class="code-input" autocomplete="off" />
-          <button id="btn-join" class="btn">참가하기</button>
-        </div>
-        <p id="home-error" class="error"></p>
+      <div class="page-title">
+        <h1>링크만 타고 목표 문서까지</h1>
+        <p class="text-secondary">모두 같은 시작 문서에서 출발해요. 가장 빨리, 또는 가장 적은 클릭으로 도착하면 승리!</p>
       </div>
-      <details class="card rules">
-        <summary>게임 규칙</summary>
-        <ul>
-          <li>방장이 시작하면 <b>모든 참가자에게 같은</b> 시작 문서와 목표 문서가 랜덤으로 주어져요.</li>
-          <li>나무위키 문서 <b>본문의 링크만</b> 클릭해서 목표 문서까지 이동하세요.</li>
-          <li>검색창, 주소창 직접 입력, 뒤로가기는 금지예요.</li>
-          <li><b>타임어택</b>: 가장 빨리 도착한 사람이 1등이에요.</li>
-          <li><b>최소 클릭</b>: 가장 적은 클릭으로 도착한 사람이 1등이에요. 클릭 수가 같으면 더 빨리 도착한 사람이 이겨요.</li>
-          <li>확장 프로그램이 나무위키에서 누른 링크와 도착을 자동으로 기록해요. 레이스 탭에서는 검색창이 막히고, 링크 클릭이 아닌 이동(주소창, 뒤로가기)은 ⚠️로 표시돼요.</li>
-          <li>나무위키 탭 구석에 실시간 순위가 보이고, 누가 도착하면 알림이 떠요.</li>
-          <li>결과 화면에서 모든 사람의 경로가 공개돼요.</li>
-        </ul>
-      </details>
-      <details class="card rules" id="install">
-        <summary>🧩 자동 기록 확장 프로그램 설치 (PC 크롬/엣지)</summary>
-        <p id="ext-installed" class="small ok hidden">✅ 이 브라우저에는 이미 설치되어 있어요.</p>
-        <ol>
-          <li><a href="https://github.com/yeowon811/namuwiki-game/archive/refs/heads/main.zip">이 링크</a>로 ZIP 파일을 내려받아 압축을 풀어요.</li>
-          <li>주소창에 <code>chrome://extensions</code>를 입력해요. 엣지라면 <code>edge://extensions</code>예요.</li>
-          <li>오른쪽 위(엣지는 왼쪽)의 <b>개발자 모드</b>를 켜요.</li>
-          <li><b>압축해제된 확장 프로그램을 로드합니다</b>를 누르고, 압축을 푼 폴더 안의 <code>extension</code> 폴더를 선택해요.</li>
-          <li>이 페이지를 새로고침해요.</li>
-        </ol>
-        <p class="small muted">모바일 브라우저는 확장 프로그램을 지원하지 않아요. 모바일에서는 직접 경로를 적는 수동 기록으로 참가해요.</p>
-      </details>
+
+      <div class="card">
+        <div class="card-head"><span class="card-title">시작하기</span></div>
+        <div class="card-body">
+          <div class="form-item">
+            <label for="name" class="form-label">닉네임</label>
+            <input id="name" class="input input-lg" maxlength="16" placeholder="닉네임을 입력하세요" autocomplete="nickname" />
+          </div>
+          <button id="btn-create" class="btn btn-primary btn-lg btn-block">방 만들기</button>
+          <div class="divider"><span>또는 방 코드로 참가</span></div>
+          <div class="space-compact">
+            <input id="code" maxlength="4" placeholder="ABCD" class="input input-lg code-input" autocomplete="off" aria-label="방 코드" />
+            <button id="btn-join" class="btn btn-lg">참가하기</button>
+          </div>
+          <p id="home-error" class="form-error"></p>
+        </div>
+      </div>
+
+      <div class="collapse">
+        <details class="collapse-item">
+          <summary class="collapse-header"><svg class="ic arrow"><use href="#i-right"/></svg>게임 규칙</summary>
+          <div class="collapse-content">
+            <ul class="bullets">
+              <li>방장이 시작하면 <b>모든 참가자에게 같은</b> 시작 문서와 목표 문서가 랜덤으로 주어져요.</li>
+              <li>나무위키 문서 <b>본문의 링크만</b> 클릭해서 목표 문서까지 이동하세요.</li>
+              <li><b>타임어택</b>: 가장 먼저 도착한 사람이 이기고, 1등이 나오는 순간 게임이 끝나요.</li>
+              <li><b>최소 클릭</b>: 가장 적은 클릭으로 도착한 사람이 1등이에요. 클릭 수가 같으면 더 빨리 도착한 사람이 이겨요.</li>
+              <li>확장 프로그램이 누른 링크와 도착을 자동으로 기록해요. 레이스 탭에서는 검색창이 막히고, 링크 클릭이 아닌 이동(주소창, 뒤로가기)은 경고로 표시돼요.</li>
+              <li>나무위키 탭 구석에 실시간 순위가 보이고, 누가 도착하면 알림이 떠요.</li>
+              <li>결과 화면에서 모든 사람의 경로가 공개돼요.</li>
+            </ul>
+          </div>
+        </details>
+        <details class="collapse-item" id="install">
+          <summary class="collapse-header"><svg class="ic arrow"><use href="#i-right"/></svg>자동 기록 확장 프로그램 설치 <span class="tag tag-default">PC 크롬·엣지</span></summary>
+          <div class="collapse-content">
+            <div id="ext-installed" class="alert alert-success hidden"><svg class="ic alert-icon"><use href="#i-check"/></svg><span>이 브라우저에는 이미 설치되어 있어요.</span></div>
+            <ol class="steps-list">
+              <li><a href="https://github.com/yeowon811/namuwiki-game/archive/refs/heads/main.zip">ZIP 파일</a>을 내려받아 압축을 풀어요.</li>
+              <li>주소창에 <code>chrome://extensions</code>를 입력해요. 엣지라면 <code>edge://extensions</code>예요.</li>
+              <li><b>개발자 모드</b>를 켜요.</li>
+              <li><b>압축해제된 확장 프로그램을 로드합니다</b>를 누르고, 압축을 푼 폴더 안의 <code>extension</code> 폴더를 선택해요.</li>
+              <li>이 페이지를 새로고침해요.</li>
+            </ol>
+            <p class="text-tertiary small">모바일 브라우저는 확장 프로그램을 지원하지 않아요. 모바일에서는 직접 경로를 적는 수동 기록으로 참가해요.</p>
+          </div>
+        </details>
+      </div>
     </section>
 
     <!-- 로비 -->
     <section id="screen-lobby" class="screen hidden">
-      <div class="card center">
-        <p class="muted small">방 코드</p>
-        <div id="lobby-code" class="room-code"></div>
-        <button id="btn-copy" class="btn ghost small">초대 링크 복사</button>
-      </div>
       <div class="card">
-        <h2>게임 설정</h2>
-        <div class="seg" id="mode-seg">
-          <button data-mode="time">⏱️ 타임어택</button>
-          <button data-mode="clicks">👆 최소 클릭</button>
+        <div class="card-body room-box">
+          <div>
+            <div class="statistic-title">방 코드</div>
+            <div id="lobby-code" class="room-code"></div>
+          </div>
+          <button id="btn-copy" class="btn"><svg class="ic"><use href="#i-copy"/></svg>초대 링크 복사</button>
         </div>
-        <p id="mode-desc" class="muted small"></p>
-        <label class="field inline">
-          <span>제한 시간</span>
-          <select id="time-limit">
-            <option value="0">제한 없음</option>
-            <option value="3">3분</option>
-            <option value="5">5분</option>
-            <option value="10">10분</option>
-            <option value="15">15분</option>
-            <option value="20">20분</option>
-            <option value="30">30분</option>
-          </select>
-        </label>
-        <p id="host-only" class="muted small">설정은 방장만 바꿀 수 있어요.</p>
       </div>
+
       <div class="card">
-        <h2>참가자 <span id="lobby-count" class="muted"></span></h2>
-        <ul id="lobby-players" class="players"></ul>
+        <div class="card-head"><span class="card-title"><svg class="ic"><use href="#i-setting"/></svg>게임 설정</span></div>
+        <div class="card-body">
+          <div class="form-item">
+            <span class="form-label">모드</span>
+            <div class="segmented" id="mode-seg">
+              <button data-mode="time"><svg class="ic"><use href="#i-clock"/></svg>타임어택</button>
+              <button data-mode="clicks"><svg class="ic"><use href="#i-aim"/></svg>최소 클릭</button>
+            </div>
+            <p id="mode-desc" class="form-extra"></p>
+          </div>
+          <div class="form-item form-item-last">
+            <label for="time-limit" class="form-label">제한 시간</label>
+            <div class="select-wrap">
+              <select id="time-limit" class="input select">
+                <option value="0">제한 없음</option>
+                <option value="3">3분</option>
+                <option value="5">5분</option>
+                <option value="10">10분</option>
+                <option value="15">15분</option>
+                <option value="20">20분</option>
+                <option value="30">30분</option>
+              </select>
+              <svg class="ic select-arrow"><use href="#i-down"/></svg>
+            </div>
+          </div>
+          <div id="host-only" class="alert alert-info"><svg class="ic alert-icon"><use href="#i-info"/></svg><span>설정은 방장만 바꿀 수 있어요.</span></div>
+        </div>
       </div>
-      <button id="btn-start" class="btn primary big">게임 시작</button>
-      <p id="wait-host" class="muted center">방장이 게임을 시작하길 기다리는 중…</p>
-      <button class="btn ghost small btn-leave">방 나가기</button>
+
+      <div class="card">
+        <div class="card-head"><span class="card-title"><svg class="ic"><use href="#i-team"/></svg>참가자</span><span id="lobby-count" class="text-tertiary"></span></div>
+        <ul id="lobby-players" class="list"></ul>
+      </div>
+
+      <button id="btn-start" class="btn btn-primary btn-lg btn-block"><svg class="ic"><use href="#i-play"/></svg>게임 시작</button>
+      <p id="wait-host" class="text-tertiary center">방장이 게임을 시작하길 기다리는 중…</p>
+      <button class="btn btn-text btn-leave"><svg class="ic"><use href="#i-logout"/></svg>방 나가기</button>
     </section>
 
     <!-- 카운트다운 -->
     <section id="screen-countdown" class="screen hidden">
       <div class="countdown-wrap">
-        <p class="muted">곧 시작합니다</p>
+        <p class="text-secondary">곧 시작합니다</p>
         <div id="countdown" class="countdown">3</div>
       </div>
     </section>
 
     <!-- 게임 중 -->
     <section id="screen-play" class="screen hidden">
-      <div class="topbar">
-        <span id="play-mode" class="badge"></span>
-        <span id="play-timer" class="timer">0:00</span>
-      </div>
-      <div class="card race">
-        <div class="doc">
-          <p class="muted small">시작 문서</p>
-          <div id="play-start" class="doc-title"></div>
-          <a id="play-start-link" class="btn primary" target="_blank" rel="noopener">나무위키에서 열기 ↗</a>
+      <div class="card">
+        <div class="card-body stat-row">
+          <div>
+            <div class="statistic-title">모드</div>
+            <span id="play-mode" class="tag tag-blue tag-lg"></span>
+          </div>
+          <div class="right">
+            <div id="play-timer-label" class="statistic-title">경과 시간</div>
+            <div id="play-timer" class="statistic-value">0:00</div>
+          </div>
         </div>
-        <div class="arrow">↓</div>
-        <div class="doc target">
-          <p class="muted small">목표 문서</p>
-          <div id="play-target" class="doc-title"></div>
-        </div>
-        <p id="play-progress" class="progress hidden"></p>
-      </div>
-
-      <div id="ext-missing" class="card notice hidden">
-        <p><b>🧩 자동 기록 확장 프로그램이 없어요.</b></p>
-        <p class="small">확장 프로그램을 설치하면 나무위키에서 누른 링크와 도착이 자동으로 기록돼요. 지금은 도착한 뒤 경로를 직접 적어야 하고, 결과에 <b>✍️ 수동 기록</b>으로 표시돼요.</p>
-        <a href="https://github.com/yeowon811/namuwiki-game#-자동-기록-확장-프로그램-설치" target="_blank" rel="noopener" class="small link-install">설치 방법 보기 ↗</a>
-      </div>
-
-      <div id="play-actions">
-        <button id="btn-arrive" class="btn success big">🎉 도착했어요!</button>
-        <p id="auto-hint" class="muted small center hidden">목표 문서에 들어가면 자동으로 도착 처리돼요. 나무위키 탭에서 링크만 눌러 이동하세요!</p>
-        <button id="btn-giveup" class="btn ghost small">포기하기</button>
-      </div>
-      <div id="play-done" class="card center hidden"></div>
-      <div id="play-spectator" class="card center hidden">
-        <p>게임 도중에 들어왔어요. 다음 판부터 참가할 수 있어요.</p>
       </div>
 
       <div class="card">
-        <h2>현황</h2>
-        <ul id="play-players" class="players"></ul>
+        <div class="card-body">
+          <div class="race-steps">
+            <div class="race-step">
+              <span class="race-dot"><svg class="ic"><use href="#i-flag"/></svg></span>
+              <div class="race-step-body">
+                <div class="statistic-title">시작 문서</div>
+                <div id="play-start" class="doc-title"></div>
+                <a id="play-start-link" class="btn btn-primary" target="_blank" rel="noopener">나무위키에서 열기</a>
+              </div>
+            </div>
+            <div class="race-step">
+              <span class="race-dot target"><svg class="ic"><use href="#i-aim"/></svg></span>
+              <div class="race-step-body">
+                <div class="statistic-title">목표 문서</div>
+                <div id="play-target" class="doc-title target"></div>
+              </div>
+            </div>
+          </div>
+          <p id="play-progress" class="progress hidden"></p>
+        </div>
       </div>
-      <button id="btn-end" class="btn ghost small">게임 끝내기 (방장)</button>
+
+      <div id="ext-missing" class="alert alert-warning alert-with-desc hidden">
+        <svg class="ic alert-icon"><use href="#i-warn"/></svg>
+        <div>
+          <div class="alert-message">자동 기록 확장 프로그램이 없어요</div>
+          <div class="alert-desc">설치하면 나무위키에서 누른 링크와 도착이 자동으로 기록돼요. 지금은 도착한 뒤 경로를 직접 적어야 하고, 결과에 <b>수동 기록</b>으로 표시돼요.
+            <a href="https://github.com/yeowon811/namuwiki-game#-자동-기록-확장-프로그램-설치" target="_blank" rel="noopener" class="link">설치 방법 보기</a></div>
+        </div>
+      </div>
+
+      <div id="play-actions" class="stack">
+        <button id="btn-arrive" class="btn btn-success btn-lg btn-block">도착했어요!</button>
+        <div id="auto-hint" class="alert alert-info hidden"><svg class="ic alert-icon"><use href="#i-info"/></svg><span>목표 문서에 들어가면 자동으로 도착 처리돼요. 나무위키 탭에서 링크만 눌러 이동하세요!</span></div>
+        <button id="btn-giveup" class="btn btn-text btn-danger-text">포기하기</button>
+      </div>
+      <div id="play-done" class="hidden"></div>
+      <div id="play-spectator" class="alert alert-info hidden"><svg class="ic alert-icon"><use href="#i-info"/></svg><span>게임 도중에 들어왔어요. 다음 판부터 참가할 수 있어요.</span></div>
+
+      <div class="card">
+        <div class="card-head"><span class="card-title"><svg class="ic"><use href="#i-team"/></svg>현황</span></div>
+        <ul id="play-players" class="list"></ul>
+      </div>
+      <button id="btn-end" class="btn btn-text">게임 끝내기 (방장)</button>
     </section>
 
     <!-- 결과 -->
     <section id="screen-results" class="screen hidden">
-      <header class="hero small-hero">
-        <h1>🏆 결과</h1>
-        <p id="res-route" class="muted"></p>
-        <p id="res-mode" class="muted small"></p>
-      </header>
+      <div class="result">
+        <span class="result-icon"><svg class="ic"><use href="#i-trophy"/></svg></span>
+        <h1 class="result-title">결과</h1>
+        <p id="res-route" class="result-sub"></p>
+        <span id="res-mode" class="tag tag-blue"></span>
+      </div>
       <ol id="res-list" class="results"></ol>
       <div id="res-host" class="stack">
-        <button id="btn-again" class="btn primary big">다음 판 (새 키워드)</button>
-        <button id="btn-lobby" class="btn">로비로 (설정 바꾸기)</button>
+        <button id="btn-again" class="btn btn-primary btn-lg btn-block"><svg class="ic"><use href="#i-redo"/></svg>다음 판 (새 키워드)</button>
+        <button id="btn-lobby" class="btn btn-lg btn-block">로비로 (설정 바꾸기)</button>
       </div>
-      <p id="res-wait" class="muted center">방장이 다음 판을 시작하길 기다리는 중…</p>
-      <button class="btn ghost small btn-leave">방 나가기</button>
+      <p id="res-wait" class="text-tertiary center">방장이 다음 판을 시작하길 기다리는 중…</p>
+      <button class="btn btn-text btn-leave"><svg class="ic"><use href="#i-logout"/></svg>방 나가기</button>
     </section>
   </main>
 
-  <!-- 도착 입력 -->
-  <dialog id="arrive-dialog">
+  <!-- 도착 입력 (Modal) -->
+  <dialog id="arrive-dialog" class="modal">
     <form method="dialog" id="arrive-form">
-      <h2>도착!</h2>
-      <p class="muted small">거쳐간 문서를 순서대로 한 줄에 하나씩 적어주세요. 시작 문서와 목표 문서는 빼고요.</p>
-      <p id="arrive-clicks-note" class="small"></p>
+      <div class="modal-title">도착 기록</div>
+      <p class="text-secondary">거쳐간 문서를 순서대로 한 줄에 하나씩 적어주세요. 시작 문서와 목표 문서는 빼고요.</p>
+      <p id="arrive-clicks-note" class="text-tertiary small"></p>
       <div class="path-preview" id="arrive-start"></div>
-      <textarea id="arrive-path" rows="6" placeholder="예)&#10;대한민국&#10;서울특별시"></textarea>
-      <div class="path-preview" id="arrive-target"></div>
-      <p id="arrive-count" class="small"></p>
-      <p id="arrive-error" class="error"></p>
-      <div class="row end">
-        <button value="cancel" class="btn ghost" formnovalidate>취소</button>
-        <button id="arrive-submit" value="ok" class="btn success">기록 제출</button>
+      <textarea id="arrive-path" class="input textarea" rows="5" placeholder="예)&#10;대한민국&#10;서울특별시"></textarea>
+      <div class="path-preview target" id="arrive-target"></div>
+      <p id="arrive-count" class="arrive-count"></p>
+      <p id="arrive-error" class="form-error"></p>
+      <div class="modal-footer">
+        <button value="cancel" class="btn" formnovalidate>취소</button>
+        <button id="arrive-submit" value="ok" class="btn btn-primary">기록 제출</button>
       </div>
     </form>
   </dialog>
 
-  <div id="toast" class="toast"></div>
+  <div id="toast" class="message" role="status"></div>
 
   <!-- 코드를 바꾸면 ?v= 숫자를 올려서 브라우저 캐시에 남은 옛 파일을 쓰지 않게 함 -->
-  <script type="module" src="app.js?v=4"></script>
+  <script type="module" src="app.js?v=5"></script>
 </body>
 </html>

@@ -125,7 +125,7 @@ function onExtState() {
     data.elapsed = Math.max(0, r.finishT + clockOffset - room.startAt);
   }
   update(roomRef(room.code, 'players', playerId), data).catch((e) => console.error(e));
-  if (r.finished) toast('🎉 도착! 기록이 저장됐어요.');
+  if (r.finished) toast('도착! 기록이 저장됐어요.', 'success');
 }
 
 function renderProgress() {
@@ -138,8 +138,8 @@ function renderProgress() {
     el.innerHTML = '위 버튼으로 나무위키를 열면 기록이 시작돼요.';
     return;
   }
-  el.innerHTML = `👆 <b>${r.clicks}클릭</b> · 지금 문서: <b>${esc(last.title)}</b>`
-    + (r.violations ? `<br><span class="error">⚠️ 링크 클릭이 아닌 이동 ${r.violations}회</span>` : '');
+  el.innerHTML = `<b>${r.clicks}클릭</b> · 지금 문서 <b>${esc(last.title)}</b>`
+    + (r.violations ? `<br><span class="warn">링크 클릭이 아닌 이동 ${r.violations}회</span>` : '');
 }
 
 const nameInput = $('#name');
@@ -158,17 +158,21 @@ function fmtTime(ms) {
 }
 const fmtTimePrecise = (ms) => (ms == null ? '-' : `${fmtTime(ms)}.${Math.floor((ms % 1000) / 100)}`);
 let toastTimer;
-function toast(msg) {
+// Ant Design의 message처럼 화면 위쪽에 잠깐 뜨는 알림
+const icon = (id, cls = '') => `<svg class="ic ${cls}"><use href="#i-${id}"/></svg>`;
+const MSG_ICON = { info: ['info', 'var(--color-primary)'], success: ['check', 'var(--color-success)'], warning: ['warn', 'var(--color-warning)'], error: ['close', 'var(--color-error)'] };
+function toast(msg, kind = 'info') {
   const el = $('#toast');
-  el.textContent = msg;
+  const [id, color] = MSG_ICON[kind] || MSG_ICON.info;
+  el.innerHTML = `<svg class="ic" style="color:${color}"><use href="#i-${id}"/></svg><span>${esc(msg)}</span>`;
   el.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('show'), 2500);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2800);
 }
-const modeLabel = (m) => (m === 'clicks' ? '👆 최소 클릭' : '⏱️ 타임어택');
+const modeLabel = (m) => (m === 'clicks' ? '최소 클릭' : '타임어택');
 const modeDesc = (m) => (m === 'clicks'
   ? '가장 적은 클릭으로 도착한 사람이 이겨요. 클릭 수가 같으면 더 빨리 도착한 사람이 이겨요.'
-  : '목표 문서에 가장 빨리 도착한 사람이 이겨요.');
+  : '목표 문서에 가장 먼저 도착한 사람이 이기고, 그 순간 게임이 끝나요.');
 const show = (screen) => $$('.screen').forEach((el) => el.classList.toggle('hidden', el.id !== 'screen-' + screen));
 const isHost = () => room?.hostId === playerId;
 const me = () => room?.players.find((p) => p.id === playerId);
@@ -248,7 +252,7 @@ function enterRoom(code) {
     const v = snap.val();
     if (!v || !v.players?.[playerId]) {
       leaveLocal();
-      toast(v ? '방에서 나왔어요.' : '방이 사라졌어요.');
+      toast(v ? '방에서 나왔어요.' : '방이 사라졌어요.', 'warning');
       return;
     }
     const prevPhase = phase();
@@ -257,7 +261,7 @@ function enterRoom(code) {
       ...v,
       players: Object.entries(v.players || {}).map(([id, p]) => ({ id, ...p })),
     };
-    if (prevPhase === 'countdown' && phase() === 'playing') toast('출발! 🏁');
+    if (prevPhase === 'countdown' && phase() === 'playing') toast('출발! 링크만 타고 목표 문서까지 가세요.', 'success');
     announceArrivals();
     render();
     maintain();
@@ -277,7 +281,7 @@ function announceArrivals() {
   for (const p of finished) {
     if (arrivalsSeen.ids.has(p.id)) continue;
     arrivalsSeen.ids.add(p.id);
-    if (p.id !== playerId) toast(`🎉 ${p.name}님 도착! (${fmtTimePrecise(p.elapsed)} · ${p.clicks}클릭)`);
+    if (p.id !== playerId) toast(`${p.name}님 도착! (${fmtTimePrecise(p.elapsed)} · ${p.clicks}클릭)`, 'success');
   }
 }
 
@@ -358,7 +362,9 @@ function maintain() {
   if (room.state === 'playing' && now() >= room.startAt) {
     const allDone = !room.players.some((p) => p.status === 'playing');
     const timeUp = room.timeLimitMin > 0 && now() >= room.startAt + room.timeLimitMin * 60000;
-    if (allDone || timeUp) endRound();
+    // 타임어택은 1등이 나오는 순간 게임 종료
+    const winner = room.mode === 'time' && room.players.some((p) => p.status === 'finished');
+    if (allDone || timeUp || winner) endRound();
   }
   const host = room.players.find((p) => p.id === room.hostId);
   const hostGone = !host || (!host.online && now() - (host.offlineSince || 0) > HOST_TIMEOUT_MS);
@@ -412,7 +418,7 @@ $('#time-limit').onchange = (e) => isHost() && update(roomRef(room.code), { time
 $('#btn-start').onclick = startRound;
 $('#btn-copy').onclick = async () => {
   const url = location.origin + location.pathname + '?room=' + room.code;
-  try { await navigator.clipboard.writeText(url); toast('초대 링크를 복사했어요!'); }
+  try { await navigator.clipboard.writeText(url); toast('초대 링크를 복사했어요!', 'success'); }
   catch { prompt('이 링크를 복사해서 보내세요', url); }
 };
 
@@ -486,11 +492,20 @@ $('#arrive-form').addEventListener('submit', async (e) => {
 });
 
 // ---------- 렌더링 ----------
+// 이름으로 정해지는 아바타 색 (antd 프리셋 색상)
+const AVATAR_COLORS = ['#1677ff', '#13c2c2', '#52c41a', '#fa8c16', '#eb2f96', '#722ed1', '#2f54eb', '#faad14', '#f5222d', '#a0d911'];
+function avatar(p) {
+  let h = 0;
+  for (const ch of p.id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const initial = [...(p.name || '?')][0].toUpperCase();
+  return `<span class="avatar" style="background:${AVATAR_COLORS[h % AVATAR_COLORS.length]}">${esc(initial)}`
+    + `<span class="badge-dot ${p.online ? '' : 'off'}" title="${p.online ? '접속 중' : '연결 끊김'}"></span></span>`;
+}
 function playerRow(p, extra = '') {
-  const mine = p.id === playerId ? '<span class="me">나</span>' : '';
-  const crown = p.id === room.hostId ? '👑 ' : '';
-  return `<li><span class="dot ${p.online ? '' : 'off'}" title="${p.online ? '접속 중' : '연결 끊김'}"></span>
-    <span class="name">${crown}${esc(p.name)}</span>${mine}${extra}</li>`;
+  const tags = [];
+  if (p.id === room.hostId) tags.push('<span class="tag tag-warning">방장</span>');
+  if (p.id === playerId) tags.push('<span class="tag tag-blue">나</span>');
+  return `<li>${avatar(p)}<span class="name">${esc(p.name)}</span><span class="tags">${tags.join('')}${extra}</span></li>`;
 }
 
 function render() {
@@ -531,22 +546,22 @@ function render() {
     $('#btn-arrive').classList.toggle('hidden', ext.ready);
     $('#auto-hint').classList.toggle('hidden', !ext.ready);
     $('#ext-missing').classList.toggle('hidden', ext.ready || status !== 'playing');
-    $('#play-start-link').textContent = ext.ready && extRaceIsCurrent() && ext.race.steps.length ? '나무위키 탭으로 돌아가기 ↗' : '나무위키에서 열기 ↗';
+    $('#play-start-link').innerHTML = (ext.ready && extRaceIsCurrent() && ext.race.steps.length ? '나무위키 탭으로 돌아가기' : '나무위키에서 열기') + icon('export');
     renderProgress();
     $('#play-spectator').classList.toggle('hidden', status !== 'waiting');
     const done = $('#play-done');
     done.classList.toggle('hidden', status !== 'finished' && status !== 'gaveup');
     if (status === 'finished') {
-      done.innerHTML = `<p><b>도착 완료!</b> ${fmtTimePrecise(my.elapsed)} · ${my.clicks}클릭</p><p class="muted small">다른 사람들이 끝나길 기다리는 중…</p>`;
+      done.innerHTML = `<div class="card done-box ok">${icon('check')}<div><p class="done-title">도착 완료! ${fmtTimePrecise(my.elapsed)} · ${my.clicks}클릭</p><p class="text-tertiary">다른 사람들이 끝나길 기다리는 중…</p></div></div>`;
     } else if (status === 'gaveup') {
-      done.innerHTML = '<p>포기했어요.</p><p class="muted small">다른 사람들이 끝나길 기다리는 중…</p>';
+      done.innerHTML = `<div class="card done-box out">${icon('close')}<div><p class="done-title">포기했어요</p><p class="text-tertiary">다른 사람들이 끝나길 기다리는 중…</p></div></div>`;
     }
     const ranked = ranking(room);
     const spectators = room.players.filter((p) => !ranked.includes(p));
     $('#play-players').innerHTML = [...ranked, ...spectators].map((p) => {
-      let tag = `<span class="tag">달리는 중${p.auto && p.clicks != null ? ` · ${p.clicks}클릭째` : ''}</span>`;
-      if (p.status === 'finished') tag = `<span class="tag done">${room.mode === 'clicks' ? p.clicks + '클릭 · ' : ''}${fmtTimePrecise(p.elapsed)}</span>`;
-      else if (p.status === 'gaveup') tag = '<span class="tag out">포기</span>';
+      let tag = `<span class="tag tag-processing">달리는 중${p.auto && p.clicks != null ? ` · ${p.clicks}클릭째` : ''}</span>`;
+      if (p.status === 'finished') tag = `<span class="tag tag-success">${room.mode === 'clicks' ? p.clicks + '클릭 · ' : ''}${fmtTimePrecise(p.elapsed)}</span>`;
+      else if (p.status === 'gaveup') tag = '<span class="tag tag-error">포기</span>';
       else if (p.status === 'waiting') tag = '<span class="tag">관전</span>';
       return playerRow(p, tag);
     }).join('');
@@ -563,12 +578,11 @@ function render() {
 function renderResults(host) {
   $('#res-route').innerHTML = `<b>${esc(room.start)}</b> → <b>${esc(room.target)}</b>`;
   $('#res-mode').textContent = modeLabel(room.mode);
-  const medals = ['🥇', '🥈', '🥉'];
   let rank = 0;
   const items = ranking(room).map((p) => {
     const finished = p.status === 'finished';
     if (finished) rank += 1;
-    const rankStr = finished ? medals[rank - 1] || rank : '-';
+    const rankStr = `<span class="rank-badge ${finished && rank <= 3 ? 'r' + rank : ''}">${finished ? rank : '-'}</span>`;
     let score;
     if (!finished) score = `<span class="muted">${p.status === 'gaveup' ? '포기' : '미도착'}</span>`;
     else if (room.mode === 'clicks') score = `${p.clicks}클릭<small>${fmtTimePrecise(p.elapsed)}</small>`;
@@ -577,15 +591,15 @@ function renderResults(host) {
     const steps = Array.isArray(p.steps) ? p.steps : Array.isArray(p.path) ? p.path.map((title) => ({ title })) : [];
     const badMark = { back: '뒤로가기', other: '링크 클릭 아님' };
     const path = steps.length
-      ? `<div class="path">${steps.map((s) => `<a href="${namuUrl(s.title)}" target="_blank" rel="noopener"${badMark[s.h] ? ` class="bad" title="⚠️ ${badMark[s.h]}"` : ''}>${badMark[s.h] ? '⚠️ ' : ''}${esc(s.title)}</a>`).join(' → ')}</div>`
+      ? `<div class="path">${steps.map((s) => `<a href="${namuUrl(s.title)}" target="_blank" rel="noopener"${badMark[s.h] ? ` class="bad" title="${badMark[s.h]}"` : ''}>${esc(s.title)}</a>`).join(icon('right', 'sep'))}</div>`
       : '';
     const flags = [];
-    if (finished && p.auto === false) flags.push('<span class="tag">✍️ 수동 기록</span>');
-    if (p.violations) flags.push(`<span class="tag out">⚠️ 규칙 위반 의심 ${p.violations}회</span>`);
-    const mine = p.id === playerId ? ' <span class="me">나</span>' : '';
-    return `<li><div class="head"><span class="rank">${rankStr}</span><span class="name">${esc(p.name)}${mine}</span><span class="score">${score}</span></div>${path}${flags.length ? `<div class="flags">${flags.join('')}</div>` : ''}</li>`;
+    if (finished && p.auto === false) flags.push('<span class="tag tag-warning">수동 기록</span>');
+    if (p.violations) flags.push(`<span class="tag tag-error">규칙 위반 의심 ${p.violations}회</span>`);
+    const mine = p.id === playerId ? ' <span class="tag tag-blue">나</span>' : '';
+    return `<li class="${finished && rank === 1 ? 'first' : ''}"><div class="head">${rankStr}<span class="name">${esc(p.name)}${mine}</span><span class="score">${score}</span></div>${path}${flags.length ? `<div class="flags">${flags.join('')}</div>` : ''}</li>`;
   });
-  $('#res-list').innerHTML = items.join('') || '<li class="muted center">참가자가 없어요.</li>';
+  $('#res-list').innerHTML = items.join('') || '<li class="text-tertiary center">참가자가 없어요.</li>';
   $('#res-host').classList.toggle('hidden', !host);
   $('#res-wait').classList.toggle('hidden', host);
 }
@@ -602,11 +616,13 @@ function tick() {
     const timer = $('#play-timer');
     if (room.timeLimitMin) {
       const left = room.timeLimitMin * 60000 - elapsed;
-      timer.textContent = '⏳ ' + fmtTime(left + 999);
+      timer.textContent = fmtTime(left + 999);
+      $('#play-timer-label').textContent = '남은 시간';
       timer.classList.toggle('warn', left < 60000);
       if (left <= 0) maintain();
     } else {
       timer.textContent = fmtTime(elapsed);
+      $('#play-timer-label').textContent = '경과 시간';
       timer.classList.remove('warn');
     }
   }
@@ -620,6 +636,6 @@ const savedCode = store.get('nr.room', ss);
 if (savedCode) {
   joinRoom(savedCode, store.get('nr.name') || '').catch(() => {
     store.del('nr.room', ss);
-    toast('이전 방에 다시 들어가지 못했어요.');
+    toast('이전 방에 다시 들어가지 못했어요.', 'warning');
   });
 }
