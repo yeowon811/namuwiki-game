@@ -161,7 +161,12 @@ function renderProgress() {
 const nameInput = $('#name');
 nameInput.value = store.get('nr.name') || '';
 const params = new URLSearchParams(location.search);
-if (params.get('room')) $('#code').value = params.get('room').toUpperCase();
+// 초대 링크(?room=ABCD)로 들어오면 '초대받은 방 참가하기' 버튼을 보여줌
+const inviteCode = /^[A-Z0-9]{4}$/i.test(params.get('room') || '') ? params.get('room').toUpperCase() : null;
+if (inviteCode) {
+  $('#btn-invite').textContent = `초대받은 방 (${inviteCode}) 참가하기`;
+  $('#btn-invite').classList.remove('hidden');
+}
 
 // ---------- 유틸 ----------
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -754,17 +759,13 @@ $('#btn-create').onclick = (e) => {
   const name = getName();
   if (name) guarded(e.currentTarget, () => createRoom(name));
 };
-function join() {
+function joinInvite() {
   const name = getName();
-  const code = $('#code').value.trim().toUpperCase();
-  if (!name) return;
-  if (!/^[A-Z0-9]{4}$/.test(code)) { setHomeError('4자리 방 코드를 입력해주세요.'); return; }
-  guarded($('#btn-join'), () => joinRoom(code, name));
+  if (name && inviteCode) guarded($('#btn-invite'), () => joinRoom(inviteCode, name));
 }
-$('#btn-join').onclick = join;
-$('#code').addEventListener('keydown', (e) => e.key === 'Enter' && join());
+$('#btn-invite').onclick = joinInvite;
 nameInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') ($('#code').value.trim() ? join() : $('#btn-create').click());
+  if (e.key === 'Enter') (inviteCode ? joinInvite() : $('#btn-create').click());
 });
 $$('.btn-leave').forEach((b) => (b.onclick = () => confirm('방에서 나갈까요?') && leaveRoom()));
 

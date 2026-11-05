@@ -495,6 +495,8 @@ code {
 .end-podium .sc { color: var(--color-text-tertiary); font-variant-numeric: tabular-nums; font-size: 13px; }
 .end-podium li.me .nm { color: var(--color-primary); }
 
+.invite-btn { margin-top: 12px; color: var(--color-primary); border-color: var(--color-primary); }
+
 /* ---------- 열려 있는 방 ---------- */
 .open-rooms li { gap: 12px; }
 .open-rooms .info { flex: 1; min-width: 0; display: flex; flex-direction: column; }
