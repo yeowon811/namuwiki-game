@@ -1,0 +1,9 @@
+{
+  "name": "namuwiki-race",
+  "version": "2.0.0",
+  "private": true,
+  "description": "나무위키 레이스 - GitHub Pages + Firebase Realtime Database",
+  "scripts": {
+    "dev": "node dev-server.js"
+  }
+}
