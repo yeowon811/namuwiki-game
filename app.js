@@ -1266,6 +1266,8 @@ const auth = getAuth(firebaseApp);
 const ID_RE = /^[a-z0-9_]{4,16}$/;
 const EMAIL_DOMAIN = 'namurace.app'; // 아이디를 Firebase 로그인용 이메일로 바꿀 때 쓰는 가짜 도메인
 const idToEmail = (id) => `${id}@${EMAIL_DOMAIN}`;
+// 비밀번호 없이 아이디만으로 로그인: Firebase 로그인에 필요한 비밀번호는 아이디로 자동으로 만듦
+const idToPassword = (id) => `namurace-${id}-login`;
 let authUser = null;
 let profile = null; // users/<uid>
 let isAdmin = false;
@@ -1276,7 +1278,7 @@ let profileLoaded = false; // users/<uid>를 한 번이라도 받았는지
 function authMessage(e) {
   const code = e?.code || '';
   if (/email-already-in-use/.test(code)) return '이미 사용 중인 아이디예요.';
-  if (/invalid-credential|wrong-password|user-not-found|invalid-email/.test(code)) return '아이디 또는 비밀번호가 맞지 않아요.';
+  if (/invalid-credential|wrong-password|user-not-found|invalid-email/.test(code)) return '가입되지 않은 아이디예요. (예전에 비밀번호로 가입한 계정은 다시 가입해야 해요)';
   if (/weak-password/.test(code)) return '비밀번호는 6자 이상이어야 해요.';
   if (/too-many-requests/.test(code)) return '시도가 너무 많아요. 잠시 후 다시 해주세요.';
   if (/operation-not-allowed|configuration-not-found/.test(code)) return 'Firebase에서 이메일/비밀번호 로그인이 꺼져 있어요. 관리자에게 알려주세요.';
@@ -1304,9 +1306,8 @@ async function authGuard(form, fn) {
 $('#login-form').addEventListener('submit', (e) => {
   e.preventDefault();
   const id = $('#login-id').value.trim().toLowerCase();
-  const pw = $('#login-pw').value;
-  if (!ID_RE.test(id) || !pw) { $('#auth-error').textContent = '아이디와 비밀번호를 입력해주세요.'; return; }
-  authGuard(e.currentTarget, () => signInWithEmailAndPassword(auth, idToEmail(id), pw));
+  if (!ID_RE.test(id)) { $('#auth-error').textContent = '아이디를 확인해주세요. (영어 소문자, 숫자, _ 로 4~16자)'; return; }
+  authGuard(e.currentTarget, () => signInWithEmailAndPassword(auth, idToEmail(id), idToPassword(id)));
 });
 
 $('#signup-form').addEventListener('submit', (e) => {
@@ -1314,16 +1315,13 @@ $('#signup-form').addEventListener('submit', (e) => {
   const name = $('#su-name').value.replace(/\s+/g, ' ').trim().slice(0, 20);
   const nick = cleanName($('#su-nick').value);
   const id = $('#su-id').value.trim().toLowerCase();
-  const pw = $('#su-pw').value;
   const err = (m) => { $('#auth-error').textContent = m; };
   if (!name) return err('이름을 입력해주세요.');
   if (!nick) return err('닉네임을 입력해주세요.');
   if (!ID_RE.test(id)) return err('아이디는 영어 소문자, 숫자, _ 로 4~16자예요.');
-  if (pw.length < 6) return err('비밀번호는 6자 이상이어야 해요.');
-  if (pw !== $('#su-pw2').value) return err('비밀번호 확인이 맞지 않아요.');
   authGuard(e.currentTarget, async () => {
     signingUp = true;
-    const cred = await createUserWithEmailAndPassword(auth, idToEmail(id), pw);
+    const cred = await createUserWithEmailAndPassword(auth, idToEmail(id), idToPassword(id));
     const uid = cred.user.uid;
     try {
       await update(ref(db), {
