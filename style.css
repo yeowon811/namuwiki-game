@@ -535,6 +535,18 @@ code {
 .char-grid button:hover { border-color: var(--color-primary); }
 .char-grid button.active { border-color: var(--color-primary); box-shadow: 0 0 0 2px var(--color-primary-bg), 0 0 0 3px var(--color-primary); }
 .char-grid.colors button { width: 28px; height: 28px; border: 0; }
+.acc-slot { margin-bottom: 10px; }
+.acc-slot .form-label { margin-bottom: 6px; }
+.acc-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+.acc-grid button {
+  display: inline-flex; align-items: center; gap: 4px; height: 30px; padding: 0 10px; font: inherit; font-size: 13px;
+  border: 1px solid var(--color-border); border-radius: 16px; background: var(--color-bg-container); color: var(--color-text);
+  cursor: pointer; transition: all var(--motion);
+}
+.acc-grid button .em { font-size: 16px; line-height: 1; }
+.acc-grid button:hover { border-color: var(--color-primary); color: var(--color-primary); }
+.acc-grid button.active { border-color: var(--color-primary); background: var(--color-primary-bg); color: var(--color-primary); font-weight: 500; }
+.acc-tip { margin: 2px 0 12px; }
 .plaza {
   position: relative; height: 280px; overflow: hidden; cursor: pointer; user-select: none; touch-action: manipulation;
   background:

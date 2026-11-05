@@ -6,7 +6,7 @@
   <title>나무위키 레이스</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" />
-  <link rel="stylesheet" href="style.css?v=13" />
+  <link rel="stylesheet" href="style.css?v=14" />
 </head>
 <body>
   <!-- 아이콘 모음 (Ant Design의 Outlined 스타일을 따라 그린 선 아이콘) -->
@@ -143,13 +143,13 @@
       <div class="card">
         <div class="card-head">
           <span class="card-title"><svg class="ic"><use href="#i-chat"/></svg>대기실 광장</span>
-          <button id="btn-char" class="btn btn-sm" type="button" aria-expanded="false">내 캐릭터 바꾸기</button>
+          <button id="btn-char" class="btn btn-sm" type="button" aria-expanded="false">내 캐릭터 꾸미기</button>
         </div>
         <div id="char-picker" class="char-picker hidden">
-          <div class="form-label">캐릭터</div>
-          <div id="char-emojis" class="char-grid"></div>
-          <div class="form-label">색</div>
+          <div class="form-label">몸 색</div>
           <div id="char-colors" class="char-grid colors"></div>
+          <div id="char-acc"></div>
+          <p class="text-tertiary small acc-tip">부위마다 하나씩 골라서 여러 개를 함께 착용할 수 있어요. 같은 걸 한 번 더 누르면 벗어요.</p>
         </div>
         <div id="plaza" class="plaza" role="application" aria-label="대기실 광장. 누르면 그 자리로 이동해요.">
           <p class="plaza-hint">방향키(WASD)로 움직이거나 바닥을 누르면 걸어가요</p>
@@ -351,6 +351,6 @@
   <div id="toast" class="message" role="status"></div>
 
   <!-- 코드를 바꾸면 ?v= 숫자를 올려서 브라우저 캐시에 남은 옛 파일을 쓰지 않게 함 -->
-  <script type="module" src="app.js?v=13"></script>
+  <script type="module" src="app.js?v=14"></script>
 </body>
 </html>

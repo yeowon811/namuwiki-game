@@ -4,6 +4,7 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
 import { firebaseConfig } from './firebase-config.js';
 import KEYWORDS from './keywords.js';
+import { SLOTS, cleanAcc, glyphOf } from './accessories.js';
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
@@ -577,7 +578,7 @@ function renderLobbies() {
   $('#open-rooms').innerHTML = open.length
     ? open.map(([code, l]) => {
       const full = l.count >= MAX_PLAYERS;
-      const e = CHAR_EMOJIS.includes(l.e) ? l.e : '🏁';
+      const e = esc(safeGlyph(l.e, '🏁'));
       return `<li><span class="avatar" style="background:var(--color-primary-bg);font-size:18px">${e}</span>`
         + `<div class="info"><span class="title">${esc(l.name || '이름 없음')}님의 방</span>`
         + `<span class="meta">${STATE_TAG[l.state] || ''}<span class="tag">${esc(modeLabel(l.mode))}</span>${l.count}명 · ${code}</span></div>`
@@ -658,7 +659,7 @@ function renderDaily() {
   const medal = ['🥇', '🥈', '🥉'];
   $('#daily-top').innerHTML = list.length
     ? list.slice(0, 3).map((r, i) => `<li class="${r.id === playerId ? 'me' : ''}"><span class="md">${medal[i]}</span>`
-      + `<span class="nm">${CHAR_EMOJIS.includes(r.e) ? r.e + ' ' : ''}${esc(r.name)}</span><span class="tm">${fmtTimePrecise(r.ms)}</span></li>`).join('')
+      + `<span class="nm">${safeGlyph(r.e) ? esc(r.e) + ' ' : ''}${esc(r.name)}</span><span class="tm">${fmtTimePrecise(r.ms)}</span></li>`).join('')
     : '<li class="empty">아직 기록이 없어요. 첫 챔피언이 되어 보세요!</li>';
   const myIdx = list.findIndex((r) => r.id === playerId);
   $('#daily-mine').textContent = myIdx >= 0 ? `내 최고 기록 ${fmtTimePrecise(list[myIdx].ms)} · ${list.length}명 중 ${myIdx + 1}등` : '';
@@ -793,13 +794,16 @@ $('#plaza').addEventListener('click', (e) => {
 $('#btn-char').onclick = (e) => {
   const open = $('#char-picker').classList.toggle('hidden') === false;
   e.currentTarget.setAttribute('aria-expanded', String(open));
-  e.currentTarget.textContent = open ? '닫기' : '내 캐릭터 바꾸기';
+  e.currentTarget.textContent = open ? '닫기' : '내 캐릭터 꾸미기';
 };
 $('#char-picker').addEventListener('click', (e) => {
   const b = e.target.closest('button');
   if (!b || !room || !me()) return;
   const cur = charOf(me());
-  update(roomRef(room.code, 'players', playerId), { char: { e: b.dataset.e || cur.e, c: b.dataset.c || cur.c } });
+  const next = { c: cur.c, ...cur.acc };
+  if (b.dataset.c) next.c = b.dataset.c;
+  if (b.dataset.slot) next[b.dataset.slot] = cur.acc[b.dataset.slot] === b.dataset.id ? null : (b.dataset.id || null); // 한 번 더 누르면 벗기
+  update(roomRef(room.code, 'players', playerId), { char: next });
 });
 let lastChatAt = 0;
 $('#chat-form').addEventListener('submit', (e) => {
@@ -911,17 +915,19 @@ $('#arrive-form').addEventListener('submit', async (e) => {
 // 이름으로 정해지는 아바타 색 (antd 프리셋 색상)
 const AVATAR_COLORS = ['#1677ff', '#13c2c2', '#52c41a', '#fa8c16', '#eb2f96', '#722ed1', '#2f54eb', '#faad14', '#f5222d', '#a0d911'];
 // ---------- 캐릭터 ----------
-const CHAR_EMOJIS = ['🐱', '🐶', '🦊', '🐻', '🐼', '🐰', '🐯', '🦁', '🐸', '🐵', '🐧', '🐤', '🐨', '🐷', '🐮', '🐹', '🦄', '🐙', '🐳', '🦖'];
+// 목록에 저장된 대표 이모지는 짧은 글자만 사용
+const safeGlyph = (e, fallback = '') => (typeof e === 'string' && e.length > 0 && e.length <= 4 ? e : fallback);
 const hashOf = (id, salt = 0) => {
   let h = salt;
   for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
   return h;
 };
 // 고른 캐릭터가 없으면 아이디로 정해지는 기본 캐릭터
+// 캐릭터 = 몸 색 + 액세서리(머리, 눈, 얼굴, 목). e는 목록에 쓰는 대표 이모지
 function charOf(p) {
-  const e = CHAR_EMOJIS.includes(p?.char?.e) ? p.char.e : CHAR_EMOJIS[hashOf(p?.id) % CHAR_EMOJIS.length];
   const c = AVATAR_COLORS.includes(p?.char?.c) ? p.char.c : AVATAR_COLORS[hashOf(p?.id, 7) % AVATAR_COLORS.length];
-  return { e, c };
+  const acc = cleanAcc(p?.char);
+  return { c, acc, e: glyphOf(acc) };
 }
 // 광장 위치 (0~1). 아직 안 움직였으면 아이디로 정해지는 자리
 function posOf(p) {
@@ -953,7 +959,7 @@ function loadPlaza3D() {
   if (plaza3dState !== 'idle') return;
   if (!webglOk()) { plaza3dState = 'failed'; return; }
   plaza3dState = 'loading';
-  import('./plaza3d.js?v=2')
+  import('./plaza3d.js?v=4')
     .then(({ createPlaza3D }) => {
       const el = $('#plaza');
       plaza3d = createPlaza3D(el, {
@@ -1032,14 +1038,14 @@ let chatSig = null;
 function renderChat() {
   const msgs = chatList().slice(-50);
   const last = msgs[msgs.length - 1];
-  const sig = `${msgs.length}/${last?.id || ''}/${last?.t || ''}/${room.players.map((p) => p.char?.e).join('')}`;
+  const sig = `${msgs.length}/${last?.id || ''}/${last?.t || ''}/${room.players.map((p) => charOf(p).e).join('')}`;
   if (sig === chatSig) return;
   chatSig = sig;
   const log = $('#chat-log');
   const nearBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
   log.innerHTML = msgs.map((m) => {
     const p = room.players.find((x) => x.id === m.pid);
-    const e = p ? charOf(p).e : (CHAR_EMOJIS.includes(m.e) ? m.e : '');
+    const e = p ? charOf(p).e : esc(safeGlyph(m.e));
     return `<li class="${m.pid === playerId ? 'me' : ''}"><span class="who"><span class="em">${e}</span>${esc(p?.name || m.name)}</span><span class="txt">${esc(m.text)}</span></li>`;
   }).join('');
   if (nearBottom || last?.pid === playerId) log.scrollTop = log.scrollHeight;
@@ -1047,13 +1053,16 @@ function renderChat() {
 
 function renderPicker() {
   const mine = charOf(me());
-  const emo = $('#char-emojis');
-  if (!emo.children.length) {
-    emo.innerHTML = CHAR_EMOJIS.map((e) => `<button type="button" data-e="${e}" aria-label="${e} 캐릭터">${e}</button>`).join('');
-    $('#char-colors').innerHTML = AVATAR_COLORS.map((c) => `<button type="button" data-c="${c}" style="background:${c}" aria-label="색 ${c}"></button>`).join('');
+  const box = $('#char-acc');
+  if (!box.children.length) {
+    $('#char-colors').innerHTML = AVATAR_COLORS.map((c) => `<button type="button" data-c="${c}" style="background:${c}" aria-label="몸 색 ${c}"></button>`).join('');
+    box.innerHTML = SLOTS.map((s) => `<div class="acc-slot"><div class="form-label">${s.label}</div><div class="acc-grid">`
+      + `<button type="button" data-slot="${s.key}" data-id="">없음</button>`
+      + s.items.map((it) => `<button type="button" data-slot="${s.key}" data-id="${it.id}"><span class="em">${it.emoji}</span>${it.label}</button>`).join('')
+      + '</div></div>').join('');
   }
-  emo.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.e === mine.e));
   $$('#char-colors button').forEach((b) => b.classList.toggle('active', b.dataset.c === mine.c));
+  $$('#char-acc button').forEach((b) => b.classList.toggle('active', (mine.acc[b.dataset.slot] || '') === b.dataset.id));
 }
 function playerRow(p, extra = '') {
   const tags = [];
