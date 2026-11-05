@@ -190,7 +190,10 @@ const MODE_DESC = {
   clicks: '가장 적은 클릭으로 도착한 사람이 이겨요. 클릭 수가 같으면 더 빨리 도착한 사람이 이겨요.',
   relay: '목표가 하나씩 공개돼요. 지금 목표에 도착해야 다음 목표가 나와요. 모든 목표를 가장 먼저 지나간 사람이 이기고, 그 순간 게임이 끝나요.',
 };
-const modeDesc = (m) => MODE_DESC[m] || MODE_DESC.time;
+const modeDesc = (m, winners = 1) => {
+  const d = MODE_DESC[m] || MODE_DESC.time;
+  return m !== 'clicks' && winners > 1 ? d.replace('그 순간 게임이 끝나요', `${winners}등까지 도착하면 게임이 끝나요`) : d;
+};
 // 이번 판의 목표 목록 (릴레이가 아니면 목표 1개)
 const targetsOf = (r) => (Array.isArray(r?.targets) && r.targets.length ? r.targets : [r?.target]);
 // 지금 쫓고 있는 목표 (릴레이는 도착한 만큼 다음 목표)
@@ -309,19 +312,27 @@ function enterRoom(code) {
 // 게임이 끝나면 화면 가운데에 '게임 완료!' 알림
 function showEnd() {
   const dlgEnd = $('#end-dialog');
-  const winner = ranking(room).find((p) => p.status === 'finished');
+  const finished = ranking(room).filter((p) => p.status === 'finished');
+  const winner = finished[0];
+  const myRank = finished.findIndex((p) => p.id === playerId) + 1;
   const score = (p) => (room.mode === 'clicks' ? `${p.clicks}클릭 · ${fmtTimePrecise(p.elapsed)}` : `${fmtTimePrecise(p.elapsed)} · ${p.clicks}클릭`);
+  const mine = me();
+  const myStage = mine?.status && mine.status !== 'finished' && room.mode === 'relay' ? `나는 ${mine.leg || 0}/${targetsOf(room).length}단계` : '';
   if (!winner) {
     $('#end-winner').textContent = '도착한 사람이 없어요';
     $('#end-sub').textContent = room.timeLimitMin ? '제한 시간이 끝났어요.' : '';
-  } else if (winner.id === playerId) {
-    $('#end-winner').innerHTML = '축하해요! <b>1등</b>이에요 🎉';
-    $('#end-sub').textContent = score(winner);
+  } else if (myRank) {
+    $('#end-winner').innerHTML = `축하해요! <b>${myRank}등</b>이에요 ${myRank === 1 ? '🎉' : '👏'}`;
+    $('#end-sub').textContent = finished.length > 1 ? '' : score(winner);
   } else {
     $('#end-winner').innerHTML = `1등 <b>${esc(winner.name)}</b>`;
-    const mine = me();
-    $('#end-sub').textContent = score(winner) + (mine?.status === 'finished' ? '' : room.mode === 'relay' && mine?.status ? ` · 나는 ${mine.leg || 0}/${targetsOf(room).length}단계` : '');
+    $('#end-sub').textContent = finished.length > 1 ? myStage : [score(winner), myStage].filter(Boolean).join(' · ');
   }
+  // 2명 이상 도착했으면 3등까지 순위 표시
+  const medal = ['🥇', '🥈', '🥉'];
+  $('#end-podium').innerHTML = finished.length > 1
+    ? finished.slice(0, 3).map((p, i) => `<li class="${p.id === playerId ? 'me' : ''}"><span>${medal[i]}</span><span class="nm">${esc(p.name)}</span><span class="sc">${score(p)}</span></li>`).join('')
+    : '';
   if (dlg.open) dlg.close();
   if (!dlgEnd.open) dlgEnd.showModal();
 }
@@ -468,7 +479,9 @@ function maintain() {
     const allDone = !room.players.some((p) => p.status === 'playing');
     const timeUp = room.timeLimitMin > 0 && now() >= room.startAt + room.timeLimitMin * 60000;
     // 타임어택은 1등이 나오는 순간 게임 종료
-    const winner = room.mode !== 'clicks' && room.players.some((p) => p.status === 'finished');
+    // 타임어택·릴레이는 설정한 등수(1~3등)까지 나오면 게임 종료
+    const winner = room.mode !== 'clicks'
+      && room.players.filter((p) => p.status === 'finished').length >= (room.winners || 1);
     if (allDone || timeUp || winner) endRound();
   }
   const host = room.players.find((p) => p.id === room.hostId);
@@ -520,6 +533,7 @@ $$('.btn-leave').forEach((b) => (b.onclick = () => confirm('방에서 나갈까�
 // ---------- 로비 이벤트 ----------
 $$('#mode-seg button').forEach((b) => (b.onclick = () => isHost() && update(roomRef(room.code), { mode: b.dataset.mode })));
 $('#time-limit').onchange = (e) => isHost() && update(roomRef(room.code), { timeLimitMin: Number(e.target.value) });
+$('#winners').onchange = (e) => isHost() && update(roomRef(room.code), { winners: Number(e.target.value) });
 $('#legs').onchange = (e) => isHost() && update(roomRef(room.code), { legs: Number(e.target.value) });
 $('#round-trip').onclick = () => isHost() && update(roomRef(room.code), { roundTrip: !room.roundTrip });
 $('#btn-start').onclick = startRound;
@@ -650,7 +664,10 @@ function render() {
       b.classList.toggle('active', b.dataset.mode === room.mode);
       b.disabled = !host;
     });
-    $('#mode-desc').textContent = modeDesc(room.mode);
+    $('#mode-desc').textContent = modeDesc(room.mode, room.winners);
+    $('#winners-item').classList.toggle('hidden', room.mode === 'clicks');
+    $('#winners').value = String(room.winners || 1);
+    $('#winners').disabled = !host;
     $('#legs-item').classList.toggle('hidden', room.mode !== 'relay');
     $('#legs').value = String(room.legs || 2);
     $('#legs').disabled = !host;
@@ -671,7 +688,7 @@ function render() {
     show('countdown');
   } else if (ph === 'playing') {
     show('play');
-    $('#play-mode').textContent = modeLabel(room.mode) + (room.timeLimitMin ? ` · ${room.timeLimitMin}분 제한` : '');
+    $('#play-mode').textContent = modeLabel(room.mode) + (room.mode !== 'clicks' && room.winners > 1 ? ` · ${room.winners}등까지` : '') + (room.timeLimitMin ? ` · ${room.timeLimitMin}분 제한` : '');
     $('#play-start').textContent = room.start;
     $('#play-start-link').href = namuUrl(room.start);
     const status = my?.status;
@@ -693,7 +710,9 @@ function render() {
     const done = $('#play-done');
     done.classList.toggle('hidden', status !== 'finished' && status !== 'gaveup');
     if (status === 'finished') {
-      done.innerHTML = `<div class="card done-box ok">${icon('check')}<div><p class="done-title">도착 완료! ${fmtTimePrecise(my.elapsed)} · ${my.clicks}클릭</p><p class="text-tertiary">다른 사람들이 끝나길 기다리는 중…</p></div></div>`;
+      const rank = room.mode === 'clicks' ? 0 : ranking(room).filter((p) => p.status === 'finished').findIndex((p) => p.id === playerId) + 1;
+      const wait = room.mode !== 'clicks' && (room.winners || 1) > 1 ? `${room.winners}등까지 나오면 게임이 끝나요.` : '다른 사람들이 끝나길 기다리는 중…';
+      done.innerHTML = `<div class="card done-box ok">${icon('check')}<div><p class="done-title">${rank ? `${rank}등으로 도착!` : '도착 완료!'} ${fmtTimePrecise(my.elapsed)} · ${my.clicks}클릭</p><p class="text-tertiary">${wait}</p></div></div>`;
     } else if (status === 'gaveup') {
       done.innerHTML = `<div class="card done-box out">${icon('close')}<div><p class="done-title">포기했어요</p><p class="text-tertiary">다른 사람들이 끝나길 기다리는 중…</p></div></div>`;
     }
