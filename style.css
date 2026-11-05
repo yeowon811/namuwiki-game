@@ -160,6 +160,16 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--primary); o
 .doc.target .doc-title { color: var(--accent); }
 .arrow { font-size: 1.4rem; color: var(--muted); margin: 8px 0; }
 #play-actions { display: flex; flex-direction: column; gap: 6px; }
+#play-actions p { margin: 0; }
+.progress { margin: 14px 0 0; padding-top: 12px; border-top: 1px dashed var(--border); font-size: 0.92rem; }
+.notice { border-color: var(--accent); }
+.notice p { margin: 0 0 6px; }
+.rules ol { margin: 10px 0 0; padding-left: 20px; font-size: 0.92rem; }
+.rules li a, .link-install { color: var(--primary); font-weight: 700; }
+.rules code { background: var(--surface-2); padding: 1px 5px; border-radius: 5px; font-size: 0.85em; }
+.ok { color: var(--success); font-weight: 700; margin: 10px 0 0; }
+.results .path .bad { outline: 1px solid var(--danger); }
+.results .flags { margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap; }
 
 .results { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .results li { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px; box-shadow: var(--shadow); }

@@ -39,6 +39,91 @@ let unsubscribeRoom = null;
 let arrivedAt = null; // '도착' 버튼 누른 시각 (서버 기준)
 let lastPhase = null;
 
+// ---------- 확장 프로그램 연동 ----------
+// 확장 프로그램(extension/game.js)과 window.postMessage로 대화
+const ext = { ready: false, race: null, sentKey: null, writtenKey: null };
+const toExt = (type, data = {}) => window.postMessage({ source: 'nr-page', type, ...data }, location.origin);
+window.addEventListener('message', (e) => {
+  if (e.source !== window || e.data?.source !== 'nr-ext') return;
+  const msg = e.data;
+  if (msg.type === 'READY') {
+    ext.ready = true;
+    ext.race = msg.race;
+    render();
+    syncExt();
+  } else if (msg.type === 'STATE') {
+    ext.race = msg.race;
+    onExtState();
+  } else if (msg.type === 'ERROR') {
+    console.warn('[확장 프로그램]', msg.message);
+  }
+});
+if (document.documentElement.dataset.nrExt) toExt('PING');
+
+const raceKey = () => (room ? `${room.code}/${room.round}` : null);
+const extRaceIsCurrent = () => ext.race && room && ext.race.code === room.code && ext.race.round === room.round && ext.race.playerId === playerId;
+
+// 게임 단계가 바뀔 때마다 확장 프로그램에 알림
+function syncExt() {
+  if (!ext.ready) return;
+  const ph = phase();
+  const racing = (ph === 'countdown' || ph === 'playing') && me()?.status === 'playing';
+  if (racing && ext.sentKey !== raceKey()) {
+    ext.sentKey = raceKey();
+    toExt('RACE', {
+      race: {
+        code: room.code, round: room.round, playerId, mode: room.mode,
+        start: room.start, target: room.target,
+        startAt: room.startAt - clockOffset, // 내 PC 시계 기준으로 변환
+      },
+    });
+  } else if (!racing && ext.sentKey) {
+    // 판이 끝났거나 포기하면 기록 중지 (도착한 경우엔 판이 끝날 때까지 '도착!' 표시 유지)
+    const inRound = ph === 'countdown' || ph === 'playing';
+    if (!inRound || me()?.status !== 'finished') {
+      ext.sentKey = null;
+      toExt('STOP');
+    }
+  }
+}
+
+// 확장 프로그램이 보낸 기록을 Firebase에 저장
+function onExtState() {
+  if (room?.state === 'playing') renderProgress();
+  if (!extRaceIsCurrent() || me()?.status !== 'playing') return;
+  const r = ext.race;
+  const key = `${raceKey()}/${r.steps.length}/${r.finished}`;
+  if (ext.writtenKey === key) return;
+  ext.writtenKey = key;
+  const data = {
+    auto: true,
+    steps: r.steps,
+    path: r.steps.map((s) => s.title),
+    clicks: r.clicks,
+    violations: r.violations,
+  };
+  if (r.finished) {
+    data.status = 'finished';
+    data.elapsed = Math.max(0, r.finishT + clockOffset - room.startAt);
+  }
+  update(roomRef(room.code, 'players', playerId), data).catch((e) => console.error(e));
+  if (r.finished) toast('🎉 도착! 기록이 저장됐어요.');
+}
+
+function renderProgress() {
+  const el = $('#play-progress');
+  const r = extRaceIsCurrent() ? ext.race : null;
+  if (!ext.ready || !r || me()?.status === 'waiting') { el.classList.add('hidden'); return; }
+  el.classList.remove('hidden');
+  const last = r.steps[r.steps.length - 1];
+  if (!last) {
+    el.innerHTML = '위 버튼으로 나무위키를 열면 기록이 시작돼요.';
+    return;
+  }
+  el.innerHTML = `👆 <b>${r.clicks}클릭</b> · 지금 문서: <b>${esc(last.title)}</b>`
+    + (r.violations ? `<br><span class="error">⚠️ 링크 클릭이 아닌 이동 ${r.violations}회</span>` : '');
+}
+
 const nameInput = $('#name');
 nameInput.value = store.get('nr.name') || '';
 const params = new URLSearchParams(location.search);
@@ -220,6 +305,9 @@ function startRound() {
     updates[`players/${p.id}/elapsed`] = null;
     updates[`players/${p.id}/clicks`] = null;
     updates[`players/${p.id}/path`] = null;
+    updates[`players/${p.id}/steps`] = null;
+    updates[`players/${p.id}/violations`] = null;
+    updates[`players/${p.id}/auto`] = null;
   }
   update(roomRef(room.code), updates);
 }
@@ -305,6 +393,14 @@ $('#btn-lobby').onclick = () => {
   update(roomRef(room.code), updates);
 };
 
+// 확장 프로그램이 있으면 확장 프로그램이 '레이스 탭'을 열어서 그 탭의 이동만 기록
+$('#play-start-link').addEventListener('click', (e) => {
+  if (!ext.ready) return;
+  e.preventDefault();
+  syncExt();
+  toExt('OPEN_START');
+});
+
 const dlg = $('#arrive-dialog');
 const pathArea = $('#arrive-path');
 const parsePath = () => pathArea.value.split('\n').map((s) => s.trim().slice(0, 80)).filter(Boolean).slice(0, 100);
@@ -341,6 +437,8 @@ $('#arrive-form').addEventListener('submit', async (e) => {
       elapsed: Math.max(0, (arrivedAt ?? now()) - room.startAt),
       clicks: path.length - 1,
       path,
+      steps: null,
+      auto: false,
     });
     pathArea.value = '';
     dlg.close();
@@ -362,7 +460,8 @@ function playerRow(p, extra = '') {
 function render() {
   const ph = phase();
   lastPhase = ph;
-  if (ph === 'home') return show('home');
+  $('#ext-installed').classList.toggle('hidden', !ext.ready);
+  if (ph === 'home') { syncExt(); return show('home'); }
   const host = isHost();
   const my = me();
 
@@ -392,6 +491,12 @@ function render() {
     $('#play-start-link').href = namuUrl(room.start);
     const status = my?.status;
     $('#play-actions').classList.toggle('hidden', status !== 'playing');
+    // 확장 프로그램이 있으면 도착은 자동, 없으면 수동 입력
+    $('#btn-arrive').classList.toggle('hidden', ext.ready);
+    $('#auto-hint').classList.toggle('hidden', !ext.ready);
+    $('#ext-missing').classList.toggle('hidden', ext.ready || status !== 'playing');
+    $('#play-start-link').textContent = ext.ready && extRaceIsCurrent() && ext.race.steps.length ? '나무위키 탭으로 돌아가기 ↗' : '나무위키에서 열기 ↗';
+    renderProgress();
     $('#play-spectator').classList.toggle('hidden', status !== 'waiting');
     const done = $('#play-done');
     done.classList.toggle('hidden', status !== 'finished' && status !== 'gaveup');
@@ -403,7 +508,7 @@ function render() {
     const ranked = ranking(room);
     const spectators = room.players.filter((p) => !ranked.includes(p));
     $('#play-players').innerHTML = [...ranked, ...spectators].map((p) => {
-      let tag = '<span class="tag">달리는 중</span>';
+      let tag = `<span class="tag">달리는 중${p.auto && p.clicks != null ? ` · ${p.clicks}클릭째` : ''}</span>`;
       if (p.status === 'finished') tag = `<span class="tag done">${room.mode === 'clicks' ? p.clicks + '클릭 · ' : ''}${fmtTimePrecise(p.elapsed)}</span>`;
       else if (p.status === 'gaveup') tag = '<span class="tag out">포기</span>';
       else if (p.status === 'waiting') tag = '<span class="tag">관전</span>';
@@ -415,6 +520,7 @@ function render() {
     show('results');
     renderResults(host);
   }
+  syncExt();
   tick();
 }
 
@@ -431,11 +537,17 @@ function renderResults(host) {
     if (!finished) score = `<span class="muted">${p.status === 'gaveup' ? '포기' : '미도착'}</span>`;
     else if (room.mode === 'clicks') score = `${p.clicks}클릭<small>${fmtTimePrecise(p.elapsed)}</small>`;
     else score = `${fmtTimePrecise(p.elapsed)}<small>${p.clicks}클릭</small>`;
-    const path = finished && Array.isArray(p.path)
-      ? `<div class="path">${p.path.map((t) => `<a href="${namuUrl(t)}" target="_blank" rel="noopener">${esc(t)}</a>`).join(' → ')}</div>`
+    // 자동 기록이면 각 이동이 링크 클릭이었는지 표시, 수동 기록이면 적은 경로만 표시
+    const steps = Array.isArray(p.steps) ? p.steps : Array.isArray(p.path) ? p.path.map((title) => ({ title })) : [];
+    const badMark = { back: '뒤로가기', other: '링크 클릭 아님' };
+    const path = steps.length
+      ? `<div class="path">${steps.map((s) => `<a href="${namuUrl(s.title)}" target="_blank" rel="noopener"${badMark[s.h] ? ` class="bad" title="⚠️ ${badMark[s.h]}"` : ''}>${badMark[s.h] ? '⚠️ ' : ''}${esc(s.title)}</a>`).join(' → ')}</div>`
       : '';
+    const flags = [];
+    if (finished && p.auto === false) flags.push('<span class="tag">✍️ 수동 기록</span>');
+    if (p.violations) flags.push(`<span class="tag out">⚠️ 규칙 위반 의심 ${p.violations}회</span>`);
     const mine = p.id === playerId ? ' <span class="me">나</span>' : '';
-    return `<li><div class="head"><span class="rank">${rankStr}</span><span class="name">${esc(p.name)}${mine}</span><span class="score">${score}</span></div>${path}</li>`;
+    return `<li><div class="head"><span class="rank">${rankStr}</span><span class="name">${esc(p.name)}${mine}</span><span class="score">${score}</span></div>${path}${flags.length ? `<div class="flags">${flags.join('')}</div>` : ''}</li>`;
   });
   $('#res-list').innerHTML = items.join('') || '<li class="muted center">참가자가 없어요.</li>';
   $('#res-host').classList.toggle('hidden', !host);
