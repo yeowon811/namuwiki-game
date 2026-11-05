@@ -90,21 +90,20 @@
               <input id="su-id" class="input input-lg" maxlength="16" autocomplete="username" autocapitalize="off" spellcheck="false" />
               <p class="form-extra">영어 소문자, 숫자, _ 로 4~16자. 로그인할 때 이 아이디만 입력해요.</p>
             </div>
-            <button class="btn btn-primary btn-lg btn-block" type="submit">가입 신청</button>
-            <p class="text-tertiary small center" style="margin-top:8px">관리자가 승인하면 이용할 수 있어요.</p>
+            <button class="btn btn-primary btn-lg btn-block" type="submit">가입하기</button>
           </form>
           <p id="auth-error" class="form-error"></p>
         </div>
       </div>
     </section>
 
-    <!-- 승인 대기 -->
+    <!-- 이용 정지 -->
     <section id="screen-pending" class="screen hidden">
       <div class="result">
-        <span class="result-icon pending-icon"><svg class="ic"><use href="#i-clock"/></svg></span>
-        <h1 class="result-title">승인 대기 중</h1>
+        <span class="result-icon pending-icon"><svg class="ic"><use href="#i-lock"/></svg></span>
+        <h1 class="result-title">이용이 정지됐어요</h1>
         <p class="result-sub" id="pending-who"></p>
-        <p class="text-secondary">가입 신청이 접수됐어요. 관리자가 승인하면 이 화면이 자동으로 바뀌어요.</p>
+        <p class="text-secondary">관리자가 이 계정의 이용을 정지했어요. 정지가 풀리면 이 화면이 자동으로 바뀌어요.</p>
       </div>
       <button class="btn btn-text btn-logout"><svg class="ic"><use href="#i-logout"/></svg>로그아웃</button>
     </section>
@@ -433,6 +432,6 @@
   <div id="toast" class="message" role="status"></div>
 
   <!-- 코드를 바꾸면 ?v= 숫자를 올려서 브라우저 캐시에 남은 옛 파일을 쓰지 않게 함 -->
-  <script type="module" src="app.js?v=20"></script>
+  <script type="module" src="app.js?v=21"></script>
 </body>
 </html>

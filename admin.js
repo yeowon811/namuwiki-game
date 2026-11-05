@@ -1,4 +1,4 @@
-// 관리자 페이지: 가입 승인/거절, 회원 목록, 포인트 조정, 이용 정지
+// 관리자 페이지: 회원 목록, 포인트 조정, 이용 정지, 삭제 (예전 방식 가입의 승인/거절)
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { getDatabase, ref, get, update, onValue } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
@@ -46,13 +46,13 @@ onAuthStateChanged(auth, async (user) => {
 
 function render() {
   const all = Object.entries(users).map(([uid, u]) => ({ uid, ...u, name: names.get(uid) || '' }));
-  const pending = all.filter((u) => !u.approved).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+  const pending = all.filter((u) => !u.approved && !u.suspended).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
   $('#pending-count').textContent = `${pending.length}명`;
   $('#pending-list').innerHTML = pending.length
     ? pending.map((u) => `<tr><td class="nick">${esc(u.nick)}</td><td>@${esc(u.id)}</td><td>${esc(u.name)}</td><td>${fmtDate(u.createdAt)}</td>`
       + `<td><div class="acts"><button class="btn btn-primary btn-sm" data-act="approve" data-uid="${u.uid}">승인</button>`
       + `<button class="btn btn-sm btn-danger" data-act="reject" data-uid="${u.uid}">거절</button></div></td></tr>`).join('')
-    : '<tr><td colspan="5" class="adm-empty">기다리는 가입 신청이 없어요.</td></tr>';
+    : '<tr><td colspan="5" class="adm-empty">없어요. 이제 가입하면 바로 이용할 수 있어요.</td></tr>';
 
   const q = $('#member-search').value.trim().toLowerCase();
   const members = all.filter((u) => u.approved || u.suspended)
@@ -96,7 +96,7 @@ document.addEventListener('click', async (e) => {
       await update(ref(db), { [`users/${uid}`]: null, [`private/${uid}`]: null, [`ids/${u.id}`]: null });
       toast(`${u.nick}님의 회원 정보를 지웠어요.`);
     } else if (b.dataset.act === 'suspend') {
-      if (!confirm(`${u.nick}님을 이용 정지할까요? 다시 승인 대기 상태가 돼요.`)) return;
+      if (!confirm(`${u.nick}님을 이용 정지할까요? 게임을 할 수 없게 돼요.`)) return;
       await update(ref(db, `users/${uid}`), { approved: false, suspended: true });
       toast(`${u.nick}님을 정지했어요.`);
     } else if (b.dataset.act === 'unsuspend') {

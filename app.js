@@ -1261,7 +1261,7 @@ setInterval(tick, 200);
 setInterval(maintain, 5000);
 
 
-// ---------- 계정: 로그인 / 회원가입 / 승인 ----------
+// ---------- 계정: 로그인 / 회원가입 (가입하면 바로 이용) ----------
 const auth = getAuth(firebaseApp);
 const ID_RE = /^[a-z0-9_]{4,16}$/;
 const EMAIL_DOMAIN = 'namurace.app'; // 아이디를 Firebase 로그인용 이메일로 바꿀 때 쓰는 가짜 도메인
@@ -1327,7 +1327,7 @@ $('#signup-form').addEventListener('submit', (e) => {
       await update(ref(db), {
         [`ids/${id}`]: uid,
         [`users/${uid}`]: {
-          id, nick, approved: false, points: 0, createdAt: serverTimestamp(),
+          id, nick, approved: true, points: 0, createdAt: serverTimestamp(),
           stats: { games: 0, win1: 0, win2: 0, win3: 0, daily1: 0 },
         },
         [`private/${uid}`]: { name },
@@ -1401,10 +1401,15 @@ function showHome() {
     if (signingUp) return show('loading');
     // 가입 정보가 없음 (거절되었거나 지워짐)
     show('auth');
-    $('#auth-error').textContent = '가입 정보가 없어요. 관리자가 거절했거나 삭제했을 수 있어요.';
+    $('#auth-error').textContent = '가입 정보가 없어요. 관리자가 삭제했을 수 있어요.';
     return;
   }
   if (!profile.approved) {
+    // 예전 방식으로 가입해서 승인을 기다리던 계정은 스스로 승인 (정지된 계정은 제외)
+    if (!profile.suspended) {
+      update(ref(db, `users/${authUser.uid}`), { approved: true }).catch((e) => console.warn('[계정]', e.message));
+      return show('loading');
+    }
     $('#pending-who').textContent = `${profile.nick} (@${profile.id})`;
     return show('pending');
   }
