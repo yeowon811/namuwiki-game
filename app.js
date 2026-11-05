@@ -69,12 +69,20 @@ function syncExt() {
   if (!ext.ready) return;
   const ph = phase();
   const racing = (ph === 'countdown' || ph === 'playing') && me()?.status === 'playing';
+  const makeBoard = () => ({
+    mode: room.mode,
+    players: ranking(room).map((p) => ({
+      id: p.id, name: p.name, status: p.status, me: p.id === playerId,
+      clicks: p.clicks ?? null, elapsed: p.elapsed ?? null, leg: p.leg || 0,
+    })),
+    total: targetsOf(room).length,
+  });
   if (racing && ext.sentKey !== raceKey()) {
     ext.sentKey = raceKey();
     toExt('RACE', {
       race: {
         code: room.code, round: room.round, playerId, mode: room.mode,
-        start: room.start, target: room.target,
+        start: room.start, target: room.target, targets: targetsOf(room),
         startAt: room.startAt - clockOffset, // 내 PC 시계 기준으로 변환
       },
     });
@@ -84,19 +92,13 @@ function syncExt() {
     if (!inRound || me()?.status !== 'finished') {
       ext.sentKey = null;
       ext.boardSent = null;
-      toExt('STOP', { ended: !inRound });
+      toExt('STOP', { ended: !inRound, board: makeBoard() });
       return;
     }
   }
   // 나무위키 탭에 실시간 순위 보내기
   if (ext.sentKey && ext.sentKey === raceKey()) {
-    const board = {
-      mode: room.mode,
-      players: ranking(room).map((p) => ({
-        id: p.id, name: p.name, status: p.status, me: p.id === playerId,
-        clicks: p.clicks ?? null, elapsed: p.elapsed ?? null,
-      })),
-    };
+    const board = makeBoard();
     const json = JSON.stringify(board);
     if (ext.boardSent !== json) {
       ext.boardSent = json;
@@ -110,8 +112,15 @@ function onExtState() {
   if (room?.state === 'playing') renderProgress();
   if (!extRaceIsCurrent() || me()?.status !== 'playing') return;
   const r = ext.race;
-  const key = `${raceKey()}/${r.steps.length}/${r.finished}`;
+  const relay = room.mode === 'relay';
+  // 예전 버전 확장 프로그램은 릴레이의 중간 목표를 모르므로 기록하지 않음
+  if (relay && !Array.isArray(r.legT)) {
+    if (!ext.oldWarned) { ext.oldWarned = true; toast('릴레이 모드는 확장 프로그램을 업데이트해야 기록돼요. (1.3.0 이상)', 'warning'); }
+    return;
+  }
+  const key = `${raceKey()}/${r.steps.length}/${r.finished}/${r.leg}`;
   if (ext.writtenKey === key) return;
+  const prevLeg = me()?.leg || 0;
   ext.writtenKey = key;
   const data = {
     auto: true,
@@ -120,6 +129,12 @@ function onExtState() {
     clicks: r.clicks,
     violations: r.violations,
   };
+  if (relay) {
+    data.leg = r.leg;
+    data.legTimes = r.legT.map((t) => Math.max(0, t + clockOffset - room.startAt));
+    const targets = targetsOf(room);
+    if (!r.finished && r.leg > prevLeg) toast(`${r.leg}번째 목표 도착! 다음 목표: ${targets[r.leg]}`, 'success');
+  }
   if (r.finished) {
     data.status = 'finished';
     data.elapsed = Math.max(0, r.finishT + clockOffset - room.startAt);
@@ -169,27 +184,45 @@ function toast(msg, kind = 'info') {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove('show'), 2800);
 }
-const modeLabel = (m) => (m === 'clicks' ? '최소 클릭' : '타임어택');
-const modeDesc = (m) => (m === 'clicks'
-  ? '가장 적은 클릭으로 도착한 사람이 이겨요. 클릭 수가 같으면 더 빨리 도착한 사람이 이겨요.'
-  : '목표 문서에 가장 먼저 도착한 사람이 이기고, 그 순간 게임이 끝나요.');
+const modeLabel = (m) => ({ clicks: '최소 클릭', relay: '릴레이' }[m] || '타임어택');
+const MODE_DESC = {
+  time: '목표 문서에 가장 먼저 도착한 사람이 이기고, 그 순간 게임이 끝나요.',
+  clicks: '가장 적은 클릭으로 도착한 사람이 이겨요. 클릭 수가 같으면 더 빨리 도착한 사람이 이겨요.',
+  relay: '목표가 하나씩 공개돼요. 지금 목표에 도착해야 다음 목표가 나와요. 모든 목표를 가장 먼저 지나간 사람이 이기고, 그 순간 게임이 끝나요.',
+};
+const modeDesc = (m) => MODE_DESC[m] || MODE_DESC.time;
+// 이번 판의 목표 목록 (릴레이가 아니면 목표 1개)
+const targetsOf = (r) => (Array.isArray(r?.targets) && r.targets.length ? r.targets : [r?.target]);
+// 지금 쫓고 있는 목표 (릴레이는 도착한 만큼 다음 목표)
+const legOf = (p) => Math.min(p?.leg || 0, targetsOf(room).length - 1);
 const show = (screen) => $$('.screen').forEach((el) => el.classList.toggle('hidden', el.id !== 'screen-' + screen));
 const isHost = () => room?.hostId === playerId;
 const me = () => room?.players.find((p) => p.id === playerId);
 
-function pickKeywords(prev) {
-  const pick = () => KEYWORDS[Math.floor(Math.random() * KEYWORDS.length)];
-  let start, target;
-  do { start = pick(); target = pick(); }
-  while (start === target || (prev && (start === prev.start || target === prev.target)));
-  return { start, target };
+// 서로 다른 키워드 n+1개 (시작 1개 + 목표 n개). 지난 판의 시작/마지막 목표와는 겹치지 않게
+function pickKeywords(prev, n = 1) {
+  const avoid = new Set(prev ? [prev.start, prev.target] : []);
+  const pool = KEYWORDS.filter((k) => !avoid.has(k));
+  const picked = [];
+  while (picked.length < n + 1) {
+    const k = pool[Math.floor(Math.random() * pool.length)];
+    if (!picked.includes(k)) picked.push(k);
+  }
+  const [start, ...targets] = picked;
+  return { start, targets, target: targets[targets.length - 1] };
 }
 
 function ranking(r) {
   const players = r.players.filter((p) => p.status && p.status !== 'waiting');
   const finished = players.filter((p) => p.status === 'finished');
   finished.sort((a, b) => (r.mode === 'clicks' ? a.clicks - b.clicks || a.elapsed - b.elapsed : a.elapsed - b.elapsed));
-  return [...finished, ...players.filter((p) => p.status !== 'finished')];
+  const rest = players.filter((p) => p.status !== 'finished');
+  // 릴레이: 아직 못 끝낸 사람은 더 많은 목표를, 더 빨리 지난 사람이 앞
+  if (r.mode === 'relay') {
+    const lastT = (p) => (p.legTimes?.length ? p.legTimes[p.legTimes.length - 1] : Infinity);
+    rest.sort((a, b) => (a.status === 'gaveup') - (b.status === 'gaveup') || (b.leg || 0) - (a.leg || 0) || lastT(a) - lastT(b));
+  }
+  return [...finished, ...rest];
 }
 
 // 지금 화면 단계: lobby / countdown / playing / results
@@ -262,10 +295,38 @@ function enterRoom(code) {
       players: Object.entries(v.players || {}).map(([id, p]) => ({ id, ...p })),
     };
     if (prevPhase === 'countdown' && phase() === 'playing') toast('출발! 링크만 타고 목표 문서까지 가세요.', 'success');
+    if ((prevPhase === 'countdown' || prevPhase === 'playing') && phase() === 'results') showEnd();
     announceArrivals();
     render();
     maintain();
   });
+}
+
+// 게임이 끝나면 화면 가운데에 '게임 완료!' 알림
+function showEnd() {
+  const dlgEnd = $('#end-dialog');
+  const winner = ranking(room).find((p) => p.status === 'finished');
+  const score = (p) => (room.mode === 'clicks' ? `${p.clicks}클릭 · ${fmtTimePrecise(p.elapsed)}` : `${fmtTimePrecise(p.elapsed)} · ${p.clicks}클릭`);
+  if (!winner) {
+    $('#end-winner').textContent = '도착한 사람이 없어요';
+    $('#end-sub').textContent = room.timeLimitMin ? '제한 시간이 끝났어요.' : '';
+  } else if (winner.id === playerId) {
+    $('#end-winner').innerHTML = '축하해요! <b>1등</b>이에요 🎉';
+    $('#end-sub').textContent = score(winner);
+  } else {
+    $('#end-winner').innerHTML = `1등 <b>${esc(winner.name)}</b>`;
+    const mine = me();
+    $('#end-sub').textContent = score(winner) + (mine?.status === 'finished' ? '' : room.mode === 'relay' && mine?.status ? ` · 나는 ${mine.leg || 0}/${targetsOf(room).length}단계` : '');
+  }
+  if (dlg.open) dlg.close();
+  if (!dlgEnd.open) dlgEnd.showModal();
+}
+
+// 릴레이 단계 표시: 지난 목표는 초록 점, 지금 찾는 목표는 파란 테두리
+function legDots(p, total) {
+  const leg = p.status === 'finished' ? total : p.leg || 0;
+  const dots = Array.from({ length: total }, (_, i) => `<i class="${i < leg ? 'on' : i === leg && p.status === 'playing' ? 'cur' : ''}"></i>`).join('');
+  return `<span class="legs" title="${leg}/${total}단계">${dots}</span>`;
 }
 
 // 게임 화면에서도 다른 사람이 도착하면 알림
@@ -273,11 +334,23 @@ let arrivalsSeen = { key: null, ids: new Set() };
 function announceArrivals() {
   const key = raceKey();
   const finished = room.players.filter((p) => p.status === 'finished');
+  const legs = new Map(room.players.map((p) => [p.id, p.leg || 0]));
   if (arrivalsSeen.key !== key) {
-    arrivalsSeen = { key, ids: new Set(finished.map((p) => p.id)) };
+    arrivalsSeen = { key, ids: new Set(finished.map((p) => p.id)), legs };
     return;
   }
   if (room.state !== 'playing') return;
+  // 릴레이: 다른 사람이 중간 목표를 지나면 알림
+  if (room.mode === 'relay') {
+    const total = targetsOf(room).length;
+    for (const p of room.players) {
+      const leg = p.leg || 0;
+      if (p.id !== playerId && p.status === 'playing' && leg > (arrivalsSeen.legs.get(p.id) || 0) && leg < total) {
+        toast(`${p.name}님이 ${leg}번째 목표를 지났어요! (${leg}/${total})`, 'info');
+      }
+    }
+    arrivalsSeen.legs = legs;
+  }
   for (const p of finished) {
     if (arrivalsSeen.ids.has(p.id)) continue;
     arrivalsSeen.ids.add(p.id);
@@ -331,12 +404,14 @@ function leaveLocal() {
 // ---------- 방장 동작 ----------
 function startRound() {
   if (!isHost()) return;
-  const { start, target } = pickKeywords(room.round ? room : null);
+  const relay = room.mode === 'relay';
+  const { start, target, targets } = pickKeywords(room.round ? room : null, relay ? (room.legs || 2) : 1);
   const updates = {
     state: 'playing',
     round: (room.round || 0) + 1,
     start,
     target,
+    targets: relay ? targets : null,
     startAt: now() + COUNTDOWN_MS,
   };
   for (const p of room.players) {
@@ -348,6 +423,8 @@ function startRound() {
     updates[`players/${p.id}/steps`] = null;
     updates[`players/${p.id}/violations`] = null;
     updates[`players/${p.id}/auto`] = null;
+    updates[`players/${p.id}/leg`] = null;
+    updates[`players/${p.id}/legTimes`] = null;
   }
   update(roomRef(room.code), updates);
 }
@@ -363,7 +440,7 @@ function maintain() {
     const allDone = !room.players.some((p) => p.status === 'playing');
     const timeUp = room.timeLimitMin > 0 && now() >= room.startAt + room.timeLimitMin * 60000;
     // 타임어택은 1등이 나오는 순간 게임 종료
-    const winner = room.mode === 'time' && room.players.some((p) => p.status === 'finished');
+    const winner = room.mode !== 'clicks' && room.players.some((p) => p.status === 'finished');
     if (allDone || timeUp || winner) endRound();
   }
   const host = room.players.find((p) => p.id === room.hostId);
@@ -415,6 +492,7 @@ $$('.btn-leave').forEach((b) => (b.onclick = () => confirm('방에서 나갈까�
 // ---------- 로비 이벤트 ----------
 $$('#mode-seg button').forEach((b) => (b.onclick = () => isHost() && update(roomRef(room.code), { mode: b.dataset.mode })));
 $('#time-limit').onchange = (e) => isHost() && update(roomRef(room.code), { timeLimitMin: Number(e.target.value) });
+$('#legs').onchange = (e) => isHost() && update(roomRef(room.code), { legs: Number(e.target.value) });
 $('#btn-start').onclick = startRound;
 $('#btn-copy').onclick = async () => {
   const url = location.origin + location.pathname + '?room=' + room.code;
@@ -449,13 +527,29 @@ const parsePath = () => pathArea.value.split('\n').map((s) => s.trim().slice(0, 
 const updateArriveCount = () => { $('#arrive-count').textContent = `총 ${parsePath().length + 1}클릭`; };
 pathArea.addEventListener('input', updateArriveCount);
 $('#btn-arrive').onclick = () => {
-  arrivedAt = now(); // 기록 시간은 이 버튼을 누른 순간 기준
+  const t = now(); // 기록 시간은 이 버튼을 누른 순간 기준
+  const my = me();
+  const targets = targetsOf(room);
+  const leg = my?.leg || 0;
+  // 릴레이의 중간 목표: 확인만 받고 다음 목표 공개
+  if (room.mode === 'relay' && leg < targets.length - 1) {
+    if (!confirm(`'${targets[leg]}' 문서에 도착했나요?`) || me()?.status !== 'playing') return;
+    update(roomRef(room.code, 'players', playerId), {
+      leg: leg + 1,
+      legTimes: [...(my.legTimes || []), Math.max(0, t - room.startAt)],
+      auto: false,
+    });
+    toast(`${leg + 1}번째 목표 도착! 다음 목표: ${targets[leg + 1]}`, 'success');
+    return;
+  }
+  arrivedAt = t;
   $('#arrive-start').textContent = room.start;
   $('#arrive-target').textContent = room.target;
   $('#arrive-error').textContent = '';
-  $('#arrive-clicks-note').textContent = room.mode === 'clicks'
-    ? '최소 클릭 모드에서는 적은 문서 수로 클릭 수를 계산해요. 정확하게 적어주세요!'
-    : '타임어택 모드에서 경로는 선택이에요. 시간은 도착 버튼을 누른 순간으로 기록돼요.';
+  $('#arrive-clicks-note').textContent = {
+    clicks: '최소 클릭 모드에서는 적은 문서 수로 클릭 수를 계산해요. 정확하게 적어주세요!',
+    relay: `중간 목표(${targets.slice(0, -1).join(', ')})도 경로에 함께 적어주세요. 시간은 도착 버튼을 누른 순간으로 기록돼요.`,
+  }[room.mode] || '타임어택 모드에서 경로는 선택이에요. 시간은 도착 버튼을 누른 순간으로 기록돼요.';
   updateArriveCount();
   dlg.showModal();
   pathArea.focus();
@@ -472,11 +566,13 @@ $('#arrive-form').addEventListener('submit', async (e) => {
   if (room.mode === 'clicks' && steps.length === 0
       && !confirm(`'${room.start}'에서 바로 '${room.target}'(으)로 1클릭 만에 도착한 게 맞나요?`)) return;
   const path = [room.start, ...steps, room.target];
+  const elapsed = Math.max(0, (arrivedAt ?? now()) - room.startAt);
   $('#arrive-submit').disabled = true;
   try {
     await update(roomRef(room.code, 'players', playerId), {
+      ...(room.mode === 'relay' ? { leg: targetsOf(room).length, legTimes: [...(me().legTimes || []), elapsed] } : {}),
       status: 'finished',
-      elapsed: Math.max(0, (arrivedAt ?? now()) - room.startAt),
+      elapsed,
       clicks: path.length - 1,
       path,
       steps: null,
@@ -524,6 +620,9 @@ function render() {
       b.disabled = !host;
     });
     $('#mode-desc').textContent = modeDesc(room.mode);
+    $('#legs-item').classList.toggle('hidden', room.mode !== 'relay');
+    $('#legs').value = String(room.legs || 2);
+    $('#legs').disabled = !host;
     $('#time-limit').value = String(room.timeLimitMin || 0);
     $('#time-limit').disabled = !host;
     $('#host-only').classList.toggle('hidden', host);
@@ -538,9 +637,15 @@ function render() {
     show('play');
     $('#play-mode').textContent = modeLabel(room.mode) + (room.timeLimitMin ? ` · ${room.timeLimitMin}분 제한` : '');
     $('#play-start').textContent = room.start;
-    $('#play-target').textContent = room.target;
     $('#play-start-link').href = namuUrl(room.start);
     const status = my?.status;
+    renderTargets(my);
+    const targets = targetsOf(room);
+    const relayMid = room.mode === 'relay' && (my?.leg || 0) < targets.length - 1;
+    $('#btn-arrive').textContent = relayMid ? `${(my?.leg || 0) + 1}번째 목표 도착했어요!` : '도착했어요!';
+    $('#auto-hint span').textContent = room.mode === 'relay'
+      ? '목표 문서에 들어가면 자동으로 도착 처리되고 다음 목표가 공개돼요. 나무위키 탭에서 링크만 눌러 이동하세요!'
+      : '목표 문서에 들어가면 자동으로 도착 처리돼요. 나무위키 탭에서 링크만 눌러 이동하세요!';
     $('#play-actions').classList.toggle('hidden', status !== 'playing');
     // 확장 프로그램이 있으면 도착은 자동, 없으면 수동 입력
     $('#btn-arrive').classList.toggle('hidden', ext.ready);
@@ -559,10 +664,13 @@ function render() {
     const ranked = ranking(room);
     const spectators = room.players.filter((p) => !ranked.includes(p));
     $('#play-players').innerHTML = [...ranked, ...spectators].map((p) => {
-      let tag = `<span class="tag tag-processing">달리는 중${p.auto && p.clicks != null ? ` · ${p.clicks}클릭째` : ''}</span>`;
+      const relay = room.mode === 'relay';
+      const legStr = relay ? ` · ${p.leg || 0}/${targets.length}단계` : '';
+      let tag = `<span class="tag tag-processing">달리는 중${legStr}${p.auto && p.clicks != null ? ` · ${p.clicks}클릭째` : ''}</span>`;
       if (p.status === 'finished') tag = `<span class="tag tag-success">${room.mode === 'clicks' ? p.clicks + '클릭 · ' : ''}${fmtTimePrecise(p.elapsed)}</span>`;
       else if (p.status === 'gaveup') tag = '<span class="tag tag-error">포기</span>';
       else if (p.status === 'waiting') tag = '<span class="tag">관전</span>';
+      if (relay && p.status !== 'waiting') tag = legDots(p, targets.length) + tag;
       return playerRow(p, tag);
     }).join('');
     $('#btn-end').classList.toggle('hidden', !host);
@@ -575,8 +683,31 @@ function render() {
   tick();
 }
 
+// 게임 화면의 목표 단계: 도착한 목표(초록), 지금 목표(파랑), 아직 안 보이는 목표(자물쇠)
+function renderTargets(my) {
+  const targets = targetsOf(room);
+  const relay = room.mode === 'relay';
+  const leg = relay ? (my?.status === 'finished' ? targets.length : my?.leg || 0) : 0;
+  const box = $('#play-steps');
+  box.querySelectorAll('.race-step.tgt').forEach((el) => el.remove());
+  const html = targets.map((t, i) => {
+    const label = relay ? `목표 ${i + 1}/${targets.length}` : '목표 문서';
+    if (relay && i < leg) {
+      const lt = my?.legTimes?.[i];
+      return `<div class="race-step tgt"><span class="race-dot done">${icon('check')}</span><div class="race-step-body"><div class="statistic-title">${label} · 도착 ${fmtTimePrecise(lt)}</div><div class="doc-title done">${esc(t)}</div></div></div>`;
+    }
+    if (relay && i > leg) {
+      return `<div class="race-step tgt"><span class="race-dot locked">${icon('lock')}</span><div class="race-step-body"><div class="statistic-title">${label}</div><div class="doc-title locked">앞 목표에 도착하면 공개돼요</div></div></div>`;
+    }
+    return `<div class="race-step tgt"><span class="race-dot target">${icon('aim')}</span><div class="race-step-body"><div class="statistic-title">${label}</div><div class="doc-title target">${esc(t)}</div></div></div>`;
+  }).join('');
+  box.insertAdjacentHTML('beforeend', html);
+}
+
 function renderResults(host) {
-  $('#res-route').innerHTML = `<b>${esc(room.start)}</b> → <b>${esc(room.target)}</b>`;
+  const targets = targetsOf(room);
+  const relay = room.mode === 'relay';
+  $('#res-route').innerHTML = [room.start, ...targets].map((t) => `<b>${esc(t)}</b>`).join(' → ');
   $('#res-mode').textContent = modeLabel(room.mode);
   let rank = 0;
   const items = ranking(room).map((p) => {
@@ -584,16 +715,21 @@ function renderResults(host) {
     if (finished) rank += 1;
     const rankStr = `<span class="rank-badge ${finished && rank <= 3 ? 'r' + rank : ''}">${finished ? rank : '-'}</span>`;
     let score;
-    if (!finished) score = `<span class="muted">${p.status === 'gaveup' ? '포기' : '미도착'}</span>`;
+    if (!finished) score = `<span class="muted">${p.status === 'gaveup' ? '포기' : '미도착'}${relay ? `<small>${legDots(p, targets.length)} ${p.leg || 0}/${targets.length}단계</small>` : ''}</span>`;
     else if (room.mode === 'clicks') score = `${p.clicks}클릭<small>${fmtTimePrecise(p.elapsed)}</small>`;
     else score = `${fmtTimePrecise(p.elapsed)}<small>${p.clicks}클릭</small>`;
     // 자동 기록이면 각 이동이 링크 클릭이었는지 표시, 수동 기록이면 적은 경로만 표시
-    const steps = Array.isArray(p.steps) ? p.steps : Array.isArray(p.path) ? p.path.map((title) => ({ title })) : [];
+    const steps = Array.isArray(p.steps) ? p.steps : Array.isArray(p.path) ? p.path.map((title, i) => ({ title, cp: relay && i > 0 && targets.includes(title) })) : [];
     const badMark = { back: '뒤로가기', other: '링크 클릭 아님' };
+    const cls = (s) => (badMark[s.h] ? ` class="bad" title="${badMark[s.h]}"` : s.cp ? ' class="cp" title="목표 도착"' : '');
     const path = steps.length
-      ? `<div class="path">${steps.map((s) => `<a href="${namuUrl(s.title)}" target="_blank" rel="noopener"${badMark[s.h] ? ` class="bad" title="${badMark[s.h]}"` : ''}>${esc(s.title)}</a>`).join(icon('right', 'sep'))}</div>`
+      ? `<div class="path">${steps.map((s) => `<a href="${namuUrl(s.title)}" target="_blank" rel="noopener"${cls(s)}>${esc(s.title)}</a>`).join(icon('right', 'sep'))}</div>`
       : '';
     const flags = [];
+    // 릴레이: 목표마다 도착 시간
+    if (relay && p.legTimes?.length) {
+      flags.push(...p.legTimes.map((t, i) => `<span class="tag tag-success">${i + 1}. ${esc(targets[i])} ${fmtTimePrecise(t)}</span>`));
+    }
     if (finished && p.auto === false) flags.push('<span class="tag tag-warning">수동 기록</span>');
     if (p.violations) flags.push(`<span class="tag tag-error">규칙 위반 의심 ${p.violations}회</span>`);
     const mine = p.id === playerId ? ' <span class="tag tag-blue">나</span>' : '';

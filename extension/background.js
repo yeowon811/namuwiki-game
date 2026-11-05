@@ -69,7 +69,7 @@ async function handle(msg, sender) {
       return { race: summary(race) };
     }
     case 'STOP': {
-      if (race) { notifyRaceTab(null, race.tabId, { ended: !!msg.ended }); await clear(); }
+      if (race) { notifyRaceTab(null, race.tabId, { ended: !!msg.ended, board: msg.board || race.board || null }); await clear(); }
       return { race: null };
     }
     case 'BOARD': {

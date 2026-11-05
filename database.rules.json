@@ -7,7 +7,8 @@
         ".read": true,
         ".write": true,
         ".validate": "$code.matches(/^[A-Z0-9]{4}$/)",
-        "mode": { ".validate": "newData.val() === 'time' || newData.val() === 'clicks'" },
+        "mode": { ".validate": "newData.val() === 'time' || newData.val() === 'clicks' || newData.val() === 'relay'" },
+        "legs": { ".validate": "newData.isNumber() && newData.val() >= 2 && newData.val() <= 5" },
         "timeLimitMin": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 30" },
         "state": { ".validate": "newData.val() === 'lobby' || newData.val() === 'playing' || newData.val() === 'results'" },
         "players": {

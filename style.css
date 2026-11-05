@@ -264,7 +264,7 @@ code {
 
 /* ---------- 세그먼트 (Segmented) ---------- */
 .segmented {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 0;
+  display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 0;
   padding: 2px; border-radius: var(--radius);
   background: var(--color-fill-tertiary);
 }
@@ -371,8 +371,8 @@ code {
 /* ---------- 레이스 (Steps 세로형) ---------- */
 .race-steps { display: flex; flex-direction: column; }
 .race-step { display: flex; gap: 16px; position: relative; }
-.race-step:first-child { padding-bottom: 24px; }
-.race-step:first-child::after {
+.race-step:not(:last-child) { padding-bottom: 24px; }
+.race-step:not(:last-child)::after {
   content: ''; position: absolute; left: 15px; top: 40px; bottom: 6px;
   width: 1px; background: var(--color-border);
 }
@@ -381,6 +381,10 @@ code {
   display: grid; place-items: center; font-size: 16px;
   background: var(--color-primary); color: #fff;
 }
+.race-dot.done { background: var(--color-success); color: #fff; }
+.race-dot.locked { background: var(--color-fill-tertiary); color: var(--color-text-quaternary); }
+.doc-title.done { color: var(--color-success-text, var(--color-success)); margin-bottom: 0; }
+.doc-title.locked { color: var(--color-text-quaternary); margin-bottom: 0; font-size: 16px; font-weight: 500; }
 .race-dot.target { background: var(--color-bg-container); color: var(--color-primary); border: 1px solid var(--color-primary); }
 .race-step-body { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
 .race-step-body .statistic-title { margin: 0; }
@@ -429,6 +433,7 @@ code {
 .path { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--color-border-secondary); display: flex; flex-wrap: wrap; align-items: center; gap: 4px 2px; font-size: 13px; }
 .path a { color: var(--color-text-secondary); padding: 0 4px; border-radius: var(--radius-sm); transition: all var(--motion); }
 .path a:hover { color: var(--color-text); background: var(--color-fill-tertiary); }
+.path a.cp { color: var(--color-success-text, var(--color-success)); font-weight: 600; }
 .path a.bad { color: var(--color-error-text); background: var(--color-error-bg); }
 .path .sep { color: var(--color-text-quaternary); font-size: 10px; }
 .results .flags { margin-top: 10px; display: flex; gap: 6px; flex-wrap: wrap; }
@@ -465,6 +470,23 @@ code {
   opacity: 0; pointer-events: none; transition: all 0.3s;
 }
 .message.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* ---------- 게임 완료 알림 ---------- */
+.end-modal { width: min(360px, calc(100vw - 32px)); padding: 32px 24px 24px; text-align: center; }
+.end-modal[open] { animation: end-pop .32s cubic-bezier(.08,.82,.17,1); }
+@keyframes end-pop { from { opacity: 0; transform: scale(.8); } to { opacity: 1; transform: none; } }
+.end-icon { display: inline-grid; place-items: center; width: 64px; height: 64px; border-radius: 50%; font-size: 34px;
+  color: var(--color-warning); background: var(--color-warning-bg, rgba(250,173,20,.12)); margin-bottom: 12px; }
+.end-title { font-size: 24px; font-weight: 700; margin-bottom: 8px; }
+.end-modal .end-winner { font-size: 16px; color: var(--color-text); margin-bottom: 4px; }
+.end-modal .end-winner b { color: var(--color-primary); }
+.end-modal #end-sub { margin-bottom: 20px; }
+
+/* ---------- 단계 표시 (릴레이) ---------- */
+.legs { display: inline-flex; align-items: center; gap: 3px; vertical-align: middle; }
+.legs i { width: 8px; height: 8px; border-radius: 50%; background: var(--color-fill-tertiary); border: 1px solid var(--color-border); }
+.legs i.on { background: var(--color-success); border-color: var(--color-success); }
+.legs i.cur { background: var(--color-primary-bg); border-color: var(--color-primary); }
 
 /* ---------- 작은 화면 ---------- */
 @media (max-width: 480px) {

@@ -33,6 +33,10 @@ export function newRace(info) {
     mode: info.mode,
     start: info.start,
     target: info.target,
+    // 릴레이는 목표가 여러 개. 아니면 목표 1개짜리 릴레이와 같음
+    targets: Array.isArray(info.targets) && info.targets.length ? info.targets : [info.target],
+    leg: 0, // 지금까지 도착한 목표 수
+    legT: [], // 목표마다 도착 시각
     startAt: info.startAt, // 내 PC 시계 기준 ms
     tabId: null,
     gameTabId: info.gameTabId ?? null,
@@ -69,11 +73,20 @@ export function applyNav(race, nav) {
   else if (nav.clickT && nav.t - nav.clickT >= 0 && nav.t - nav.clickT < CLICK_WINDOW_MS) h = 'link';
   else h = 'other';
 
-  race.steps.push({ title: page.title, h, t: nav.t });
+  const step = { title: page.title, h, t: nav.t };
+  race.steps.push(step);
   race.offDoc = false;
-  if (matches(page, race.target)) {
-    race.finished = true;
-    race.finishT = nav.t;
+  const targets = race.targets || [race.target];
+  race.leg = race.leg || 0;
+  race.legT = race.legT || [];
+  if (matches(page, targets[race.leg])) {
+    step.cp = true;
+    race.legT.push(nav.t);
+    race.leg += 1;
+    if (race.leg >= targets.length) {
+      race.finished = true;
+      race.finishT = nav.t;
+    }
   }
   return true;
 }
@@ -87,8 +100,14 @@ export function summary(race) {
     mode: race.mode,
     start: race.start,
     target: race.target,
+    targets: race.targets || [race.target],
+    total: (race.targets || [race.target]).length,
+    leg: race.leg || 0,
+    legT: race.legT || [],
+    // 지금 쫓고 있는 목표 (도착하면 마지막 목표)
+    current: (race.targets || [race.target])[Math.min(race.leg || 0, (race.targets || [race.target]).length - 1)],
     startAt: race.startAt,
-    steps: race.steps.map(({ title, h }) => ({ title, h })),
+    steps: race.steps.map(({ title, h, cp }) => (cp ? { title, h, cp } : { title, h })),
     clicks: Math.max(0, race.steps.length - 1),
     violations: race.steps.filter((s) => s.h === 'back' || s.h === 'other').length,
     finished: race.finished,

@@ -139,6 +139,7 @@
             --border:#303030;--fill:rgba(255,255,255,.08);--bg:#1f1f1f}
         }
         *{box-sizing:border-box}
+        [hidden]{display:none!important}
         svg{width:1em;height:1em;flex:none;vertical-align:-.125em}
         .wrap{position:fixed;right:16px;bottom:16px;width:272px;pointer-events:auto;
           background:var(--bg);border-radius:8px;box-shadow:var(--shadow);overflow:hidden}
@@ -176,11 +177,35 @@
         .toast svg{font-size:20px;margin-top:1px;color:var(--success)}
         .toast.info svg{color:var(--primary)}
         .toast.warning svg{color:var(--gold)}
+        .legs{display:inline-flex;gap:3px;margin-right:6px;vertical-align:middle}
+        .legs i{width:7px;height:7px;border-radius:50%;background:var(--fill);border:1px solid var(--border)}
+        .legs i.on{background:var(--success);border-color:var(--success)}
+        .legs i.cur{background:var(--primary-bg);border-color:var(--primary)}
+        /* 게임 완료: 화면 가운데 */
+        .end{position:fixed;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.45);pointer-events:auto;
+          --primary:#1677ff;--gold:#faad14;--gold-bg:#fffbe6;--text:rgba(0,0,0,.88);--text3:rgba(0,0,0,.45);--bg:#fff;
+          font:14px/1.5715 -apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans KR',Roboto,'Helvetica Neue',Arial,sans-serif;color:var(--text)}
+        @media (prefers-color-scheme: dark){.end{--primary:#1668dc;--gold:#d89614;--gold-bg:#2b2111;--text:rgba(255,255,255,.85);--text3:rgba(255,255,255,.45);--bg:#1f1f1f}}
+        .end[hidden]{display:none}
+        .card{width:min(340px,calc(100vw - 32px));background:var(--bg);border-radius:12px;padding:32px 24px 24px;text-align:center;
+          box-shadow:0 6px 16px 0 rgba(0,0,0,.08),0 3px 6px -4px rgba(0,0,0,.12),0 9px 28px 8px rgba(0,0,0,.05);animation:pop .32s cubic-bezier(.08,.82,.17,1)}
+        @keyframes pop{from{opacity:0;transform:scale(.8)}to{opacity:1;transform:none}}
+        .ei{display:inline-grid;place-items:center;width:64px;height:64px;border-radius:50%;background:var(--gold-bg);color:var(--gold);font-size:34px;margin-bottom:12px}
+        .et{font-size:24px;font-weight:700;margin-bottom:8px}
+        .ew{font-size:16px;margin-bottom:4px}.ew b{color:var(--primary)}
+        .es{color:var(--text3);margin-bottom:20px}
+        .eb{width:100%;height:40px;border:0;border-radius:8px;background:var(--primary);color:#fff;font:inherit;font-size:16px;cursor:pointer}
+        .eb:hover{filter:brightness(1.1)}
       </style>
+      <div class="end" hidden><div class="card">
+        <span class="ei"><svg viewBox="0 0 24 24"><path d="M7 4h10v5a5 5 0 0 1-10 0V4zM7 6H4v1.5A3.5 3.5 0 0 0 7.5 11M17 6h3v1.5a3.5 3.5 0 0 1-3.5 3.5M12 14v3M8.5 20h7M9.5 17h5v3h-5z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></span>
+        <div class="et">게임 완료!</div><div class="ew"></div><div class="es"></div>
+        <button class="eb">닫기</button>
+      </div></div>
       <div class="toast"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="currentColor"/><path class="mark" d="M8 12.2l2.8 2.8L16 9.5" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="msg"></span></div>
       <div class="wrap">
         <div class="box">
-          <div class="k"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/></svg>목표 문서</div>
+          <div class="k"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/></svg><span class="klabel">목표 문서</span></div>
           <div class="target"></div>
           <div class="row">
             <span class="stat"><svg viewBox="0 0 24 24"><path d="M9 3.5v7.2M9 10.7V6.5a1.7 1.7 0 0 1 3.4 0v4M12.4 10.5V8.3a1.7 1.7 0 0 1 3.4 0v2.5M15.8 10.8V9.6a1.7 1.7 0 0 1 3.4 0v4.6a6.3 6.3 0 0 1-6.3 6.3h-1.2a5.5 5.5 0 0 1-4.6-2.5L4.6 15a1.6 1.6 0 0 1 2.6-1.9L9 15.2V5.2a1.7 1.7 0 0 1 3.4 0" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="clicks"></span></span>
@@ -193,6 +218,7 @@
           <ol></ol>
         </div>
       </div>`;
+    root.querySelector('.eb').addEventListener('click', () => { root.querySelector('.end').hidden = true; if (!race) removeHud(); });
     root.querySelector('.bhead').addEventListener('click', () => {
       boardOpen = !boardOpen;
       try { sessionStorage.setItem('nr-board-open', boardOpen ? '1' : '0'); } catch {}
@@ -255,10 +281,38 @@
         cls += ' out';
         s = '포기';
       } else {
-        s = p.clicks != null ? `달리는 중 · ${p.clicks}클릭째` : '달리는 중';
+        const leg = board.mode === 'relay' ? ` · ${p.leg || 0}/${board.total}` : '';
+        s = p.clicks != null ? `달리는 중${leg} · ${p.clicks}클릭째` : `달리는 중${leg}`;
       }
-      return `<li class="${cls}"><span class="rk ${rkCls}">${rk}</span><span class="n">${esc(p.name)}${p.me ? ' (나)' : ''}</span><span class="s">${s}</span></li>`;
+      const dots = board.mode === 'relay' && board.total > 1 && p.status !== 'waiting' ? legDots(p, board.total) : '';
+      return `<li class="${cls}"><span class="rk ${rkCls}">${rk}</span><span class="n">${dots}${esc(p.name)}${p.me ? ' (나)' : ''}</span><span class="s">${s}</span></li>`;
     }).join('');
+  }
+
+  function legDots(p, total) {
+    const leg = p.status === 'finished' ? total : p.leg || 0;
+    return `<span class="legs">${Array.from({ length: total }, (_, i) => `<i class="${i < leg ? 'on' : i === leg && p.status === 'playing' ? 'cur' : ''}"></i>`).join('')}</span>`;
+  }
+
+  // 게임 완료 알림 (화면 가운데)
+  function showEnd(board) {
+    ensureHud();
+    const players = board?.players || [];
+    const winner = players.find((p) => p.status === 'finished');
+    const mine = players.find((p) => p.me);
+    const score = (p) => (board.mode === 'clicks' ? `${p.clicks}클릭 · ${fmtP(p.elapsed)}` : `${fmtP(p.elapsed)} · ${p.clicks}클릭`);
+    let w, sub;
+    if (!winner) { w = '도착한 사람이 없어요'; sub = ''; }
+    else if (winner.me) { w = '축하해요! <b>1등</b>이에요 🎉'; sub = score(winner); }
+    else {
+      w = `1등 <b>${esc(winner.name)}</b>`;
+      sub = score(winner) + (board.mode === 'relay' && mine && mine.status !== 'finished' ? ` · 나는 ${mine.leg || 0}/${board.total}단계` : '');
+    }
+    root.querySelector('.ew').innerHTML = w;
+    root.querySelector('.es').textContent = (sub ? sub + ' · ' : '') + '게임 탭에서 결과를 확인하세요.';
+    root.querySelector('.end').hidden = false;
+    root.querySelector('.wrap').hidden = true;
+    root.querySelector('.toast').classList.remove('show');
   }
 
   // 다른 사람이 새로 도착하면 알림
@@ -278,13 +332,25 @@
 
   function setRace(r) {
     const prevKey = race && `${race.code}/${race.round}`;
+    const prevLeg = race?.leg || 0;
     race = r;
     updateBlockStyle();
     if (!race) return removeHud();
-    if (prevKey !== `${race.code}/${race.round}`) seenFinished = null;
+    const sameRace = prevKey === `${race.code}/${race.round}`;
+    if (!sameRace) seenFinished = null;
     ensureHud();
+    root.querySelector('.wrap').hidden = false;
+    root.querySelector('.end').hidden = true;
+    const total = race.total || 1;
+    const leg = race.leg || 0;
+    const current = race.current || race.target;
     root.querySelector('.box').classList.toggle('done', race.finished);
-    root.querySelector('.target').textContent = race.finished ? `도착! ${race.target}` : race.target;
+    root.querySelector('.klabel').textContent = total > 1 ? `목표 ${Math.min(leg + 1, total)}/${total}` : '목표 문서';
+    root.querySelector('.target').textContent = race.finished ? `도착! ${current}` : current;
+    // 릴레이: 중간 목표에 도착하면 다음 목표 공개
+    if (sameRace && total > 1 && leg > prevLeg && !race.finished) {
+      toast(`${leg}번째 목표 도착! 다음 목표: ${current}`, 5000, 'success');
+    }
     root.querySelector('.clicks').textContent = `${race.clicks}클릭`;
     const warn = root.querySelector('.warn');
     warn.hidden = !race.violations;
@@ -297,12 +363,10 @@
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.type !== 'HUD') return;
     if (!msg.race && msg.ended && race) {
-      const winner = race.board?.players?.find((p) => p.status === 'finished');
+      const board = msg.board || race.board;
       race = null;
       updateBlockStyle();
-      const who = winner && !winner.me ? `${winner.name}님이 1등으로 도착해서 ` : '';
-      toast(`${who}게임이 끝났어요! 게임 탭에서 결과를 확인하세요.`, 6000, 'info');
-      setTimeout(() => { if (!race) removeHud(); }, 6000);
+      showEnd(board); // '닫기'를 누르면 사라짐
       return;
     }
     setRace(msg.race);
