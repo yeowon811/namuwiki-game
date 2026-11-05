@@ -1356,7 +1356,6 @@ function watchProfile(uid) {
       const prev = profile;
       profile = s.val();
       profileLoaded = true;
-      if (prev && profile) notifyGiftIn(prev, profile);
       showHome();
     }, (e) => { console.warn('[계정]', e.message); }),
     onValue(ref(db, `admins/${uid}`), (s) => { isAdmin = s.val() === true; renderHeaderUser(); }, () => {}),
@@ -1468,61 +1467,10 @@ $('#nick-form').addEventListener('submit', async (e) => {
   }
 });
 
-// ---------- 포인트 선물 ----------
-$('#btn-gift').onclick = () => {
-  $('#gift-have').textContent = `${(profile.points || 0).toLocaleString()}P`;
-  $('#gift-to').value = '';
-  $('#gift-amt').value = '';
-  $('#gift-error').textContent = '';
-  $('#gift-dialog').showModal();
-  $('#gift-to').focus();
-};
-$('#gift-form').addEventListener('submit', async (e) => {
-  if (e.submitter?.value !== 'ok') return;
-  e.preventDefault();
-  const err = (m) => { $('#gift-error').textContent = m; };
-  const toId = $('#gift-to').value.trim().toLowerCase();
-  const amt = Number($('#gift-amt').value);
-  if (!ID_RE.test(toId)) return err('받는 사람 아이디를 확인해주세요.');
-  if (toId === profile.id) return err('나에게는 선물할 수 없어요.');
-  if (!Number.isInteger(amt) || amt < 1) return err('1 이상의 정수로 적어주세요.');
-  $('#gift-submit').disabled = true;
-  try {
-    const toUid = (await get(ref(db, `ids/${toId}`))).val();
-    if (!toUid) return err('그런 아이디가 없어요.');
-    const [meSnap, toSnap] = await Promise.all([get(ref(db, `users/${authUser.uid}`)), get(ref(db, `users/${toUid}`))]);
-    const mine = meSnap.val();
-    const them = toSnap.val();
-    if (!them) return err('그런 회원이 없어요.');
-    if ((mine.points || 0) < amt) return err(`포인트가 부족해요. (지금 ${mine.points || 0}P)`);
-    const key = push(ref(db, 'gifts')).key;
-    await update(ref(db), {
-      [`gifts/${key}`]: { from: authUser.uid, to: toUid, amt, fromNick: mine.nick, toNick: them.nick, at: serverTimestamp() },
-      [`users/${toUid}/points`]: (them.points || 0) + amt,
-      [`users/${toUid}/lastGiftIn`]: { key, from: authUser.uid, amt },
-      [`users/${authUser.uid}/points`]: mine.points - amt,
-    });
-    $('#gift-dialog').close();
-    toast(`${them.nick}님에게 ${amt}P를 선물했어요!`, 'success');
-  } catch (e2) {
-    err(authMessage(e2));
-  } finally {
-    $('#gift-submit').disabled = false;
-  }
-});
-// 선물을 받으면 알림
-function notifyGiftIn(prev, cur) {
-  const g = cur.lastGiftIn;
-  if (!g || g.key === prev.lastGiftIn?.key) return;
-  get(ref(db, `gifts/${g.key}`)).then((s) => {
-    const nick = s.val()?.fromNick || '누군가';
-    toast(`🎁 ${nick}님이 ${g.amt}P를 선물했어요!`, 'success');
-  }).catch(() => toast(`🎁 ${g.amt}P를 선물 받았어요!`, 'success'));
-}
-
-// ---------- 승리 포인트 (1등 100, 2등 50, 3등 30) ----------
-// 로그인한 2명 이상이 한 판에서만. 2등은 3명 이상, 3등은 4명 이상일 때
-const PRIZE = [100, 50, 30];
+// ---------- 승리 포인트: 참가 인원에 따라 ----------
+// 2명: 1등 30 / 3명: 1등 50, 2등 30 / 4명 이상: 1등 100, 2등 50, 3등 30
+const PRIZE = [100, 50, 30]; // 오늘의 챔피언 1·2·3등
+const prizesFor = (n) => (n >= 4 ? [100, 50, 30] : n === 3 ? [50, 30] : n === 2 ? [30] : []);
 let claimedKey = null;
 async function claimRoundRewards() {
   if (!room || room.state !== 'results' || room.daily || !authUser) return;
@@ -1545,7 +1493,7 @@ async function claimRoundRewards() {
       updates[`users/${authUser.uid}/lastGame`] = { code, round };
       updates[`users/${authUser.uid}/stats/games`] = (prof.stats?.games || 0) + 1;
     }
-    const amt = rank >= 1 && rank <= 3 && participants >= rank + 1 ? PRIZE[rank - 1] : 0;
+    const amt = rank >= 1 ? prizesFor(participants)[rank - 1] || 0 : 0;
     if (amt) {
       const claimed = (await get(ref(db, `claims/${code}/${authUser.uid}`))).val();
       if (!(typeof claimed === 'number' && claimed >= round)) {
