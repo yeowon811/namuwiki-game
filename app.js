@@ -262,7 +262,8 @@ async function joinRoom(code, name) {
   const snap = await get(roomRef(code));
   if (!snap.exists()) throw new Error('존재하지 않는 방 코드예요.');
   const players = snap.val().players || {};
-  if (players[playerId]) {
+  if (snap.val().kicked?.[playerId]) throw new Error('방장이 이 방에서 내보냈어요.');
+  if (players[playerId]?.name) {
     const patch = { online: true, offlineSince: null };
     if (name) patch.name = name;
     await update(roomRef(code, 'players', playerId), patch);
@@ -283,17 +284,20 @@ function enterRoom(code) {
   unsubscribeRoom?.();
   unsubscribeRoom = onValue(roomRef(code), (snap) => {
     const v = snap.val();
-    if (!v || !v.players?.[playerId]) {
+    const kicked = !!v?.kicked?.[playerId];
+    if (!v || !v.players?.[playerId]?.name || kicked) {
       leaveLocal();
-      toast(v ? '방에서 나왔어요.' : '방이 사라졌어요.', 'warning');
+      toast(kicked ? '방장이 방에서 내보냈어요.' : v ? '방에서 나왔어요.' : '방이 사라졌어요.', 'warning');
       return;
     }
     const prevPhase = phase();
     room = {
       code,
       ...v,
-      players: Object.entries(v.players || {}).map(([id, p]) => ({ id, ...p })),
+      // 이름이 없는 항목은 내보낸 사람의 연결 끊김 기록이 남은 것이므로 무시
+      players: Object.entries(v.players || {}).filter(([, p]) => p?.name).map(([id, p]) => ({ id, ...p })),
     };
+    room.ghosts = Object.entries(v.players || {}).filter(([id, p]) => !p?.name || v.kicked?.[id]).map(([id]) => id);
     if (prevPhase === 'countdown' && phase() === 'playing') toast('출발! 링크만 타고 목표 문서까지 가세요.', 'success');
     if ((prevPhase === 'countdown' || prevPhase === 'playing') && phase() === 'results') showEnd();
     announceArrivals();
@@ -405,7 +409,11 @@ function leaveLocal() {
 function startRound() {
   if (!isHost()) return;
   const relay = room.mode === 'relay';
-  const { start, target, targets } = pickKeywords(room.round ? room : null, relay ? (room.legs || 2) : 1);
+  const picked = pickKeywords(room.round ? room : null, relay ? (room.legs || 2) : 1);
+  const { start } = picked;
+  let { target, targets } = picked;
+  // 릴레이 '시작 문서로 돌아오기': 마지막 목표로 시작 문서를 한 번 더 넣음
+  if (relay && room.roundTrip) { targets = [...targets, start]; target = start; }
   const updates = {
     state: 'playing',
     round: (room.round || 0) + 1,
@@ -429,6 +437,21 @@ function startRound() {
   update(roomRef(room.code), updates);
 }
 
+// 방장: 참가자 내보내기 (다시 들어오지 못하게 kicked에 기록)
+function kickPlayer(id) {
+  const p = room?.players.find((x) => x.id === id);
+  if (!isHost() || !p || id === playerId) return;
+  if (!confirm(`${p.name}님을 방에서 내보낼까요?`)) return;
+  update(roomRef(room.code), { [`players/${id}`]: null, [`kicked/${id}`]: true })
+    .then(() => toast(`${p.name}님을 내보냈어요.`, 'success'));
+}
+for (const sel of ['#lobby-players', '#play-players']) {
+  $(sel).addEventListener('click', (e) => {
+    const b = e.target.closest('[data-kick]');
+    if (b) kickPlayer(b.dataset.kick);
+  });
+}
+
 function endRound() {
   if (room?.state === 'playing') update(roomRef(room.code), { state: 'results' });
 }
@@ -436,6 +459,11 @@ function endRound() {
 // 누구나 실행해도 결과가 같은(멱등) 정리 작업: 라운드 종료, 방장 넘기기
 function maintain() {
   if (!room) return;
+  if (isHost() && room.ghosts?.length) {
+    const fix = {};
+    for (const id of room.ghosts) fix[`players/${id}`] = null;
+    update(roomRef(room.code), fix);
+  }
   if (room.state === 'playing' && now() >= room.startAt) {
     const allDone = !room.players.some((p) => p.status === 'playing');
     const timeUp = room.timeLimitMin > 0 && now() >= room.startAt + room.timeLimitMin * 60000;
@@ -493,6 +521,7 @@ $$('.btn-leave').forEach((b) => (b.onclick = () => confirm('방에서 나갈까�
 $$('#mode-seg button').forEach((b) => (b.onclick = () => isHost() && update(roomRef(room.code), { mode: b.dataset.mode })));
 $('#time-limit').onchange = (e) => isHost() && update(roomRef(room.code), { timeLimitMin: Number(e.target.value) });
 $('#legs').onchange = (e) => isHost() && update(roomRef(room.code), { legs: Number(e.target.value) });
+$('#round-trip').onclick = () => isHost() && update(roomRef(room.code), { roundTrip: !room.roundTrip });
 $('#btn-start').onclick = startRound;
 $('#btn-copy').onclick = async () => {
   const url = location.origin + location.pathname + '?room=' + room.code;
@@ -601,7 +630,9 @@ function playerRow(p, extra = '') {
   const tags = [];
   if (p.id === room.hostId) tags.push('<span class="tag tag-warning">방장</span>');
   if (p.id === playerId) tags.push('<span class="tag tag-blue">나</span>');
-  return `<li>${avatar(p)}<span class="name">${esc(p.name)}</span><span class="tags">${tags.join('')}${extra}</span></li>`;
+  const kick = isHost() && p.id !== playerId
+    ? `<button class="kick" data-kick="${esc(p.id)}" title="${esc(p.name)}님 내보내기" aria-label="${esc(p.name)}님 내보내기">${icon('kick')}</button>` : '';
+  return `<li>${avatar(p)}<span class="name">${esc(p.name)}</span><span class="tags">${tags.join('')}${extra}</span>${kick}</li>`;
 }
 
 function render() {
@@ -623,6 +654,11 @@ function render() {
     $('#legs-item').classList.toggle('hidden', room.mode !== 'relay');
     $('#legs').value = String(room.legs || 2);
     $('#legs').disabled = !host;
+    $('#round-trip').setAttribute('aria-checked', String(!!room.roundTrip));
+    $('#round-trip').disabled = !host;
+    const n = room.legs || 2;
+    $('#round-trip-desc').classList.toggle('hidden', !room.roundTrip);
+    $('#round-trip-desc').textContent = `시작 → ${Array.from({ length: n }, (_, i) => `목표 ${i + 1}`).join(' → ')} → 다시 시작 문서로 돌아오면 끝나요.`;
     $('#time-limit').value = String(room.timeLimitMin || 0);
     $('#time-limit').disabled = !host;
     $('#host-only').classList.toggle('hidden', host);
@@ -691,7 +727,8 @@ function renderTargets(my) {
   const box = $('#play-steps');
   box.querySelectorAll('.race-step.tgt').forEach((el) => el.remove());
   const html = targets.map((t, i) => {
-    const label = relay ? `목표 ${i + 1}/${targets.length}` : '목표 문서';
+    const back = relay && i === targets.length - 1 && t === room.start;
+    const label = relay ? `목표 ${i + 1}/${targets.length}${back ? ' · 시작 문서로 돌아오기' : ''}` : '목표 문서';
     if (relay && i < leg) {
       const lt = my?.legTimes?.[i];
       return `<div class="race-step tgt"><span class="race-dot done">${icon('check')}</span><div class="race-step-body"><div class="statistic-title">${label} · 도착 ${fmtTimePrecise(lt)}</div><div class="doc-title done">${esc(t)}</div></div></div>`;
