@@ -19,9 +19,9 @@ function notifyGame(race) {
   if (race?.gameTabId == null) return;
   chrome.tabs.sendMessage(race.gameTabId, { type: 'STATE', race: summary(race) }).catch(() => {});
 }
-function notifyRaceTab(race, tabId = race?.tabId) {
+function notifyRaceTab(race, tabId = race?.tabId, extra = {}) {
   if (tabId == null) return;
-  chrome.tabs.sendMessage(tabId, { type: 'HUD', race: race ? summary(race) : null }).catch(() => {});
+  chrome.tabs.sendMessage(tabId, { type: 'HUD', race: race ? summary(race) : null, ...extra }).catch(() => {});
 }
 
 async function openRaceTab(race) {
@@ -69,8 +69,16 @@ async function handle(msg, sender) {
       return { race: summary(race) };
     }
     case 'STOP': {
-      if (race) { notifyRaceTab(null, race.tabId); await clear(); }
+      if (race) { notifyRaceTab(null, race.tabId, { ended: !!msg.ended }); await clear(); }
       return { race: null };
+    }
+    case 'BOARD': {
+      // 실시간 순위: 같은 판일 때만 받아서 레이스 탭에 전달
+      if (!race || race.code !== msg.code || race.round !== msg.round) return {};
+      race.board = msg.board;
+      await save(race);
+      notifyRaceTab(race);
+      return {};
     }
 
     // ----- 나무위키 탭에서 -----

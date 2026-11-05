@@ -83,7 +83,24 @@ function syncExt() {
     const inRound = ph === 'countdown' || ph === 'playing';
     if (!inRound || me()?.status !== 'finished') {
       ext.sentKey = null;
-      toExt('STOP');
+      ext.boardSent = null;
+      toExt('STOP', { ended: !inRound });
+      return;
+    }
+  }
+  // 나무위키 탭에 실시간 순위 보내기
+  if (ext.sentKey && ext.sentKey === raceKey()) {
+    const board = {
+      mode: room.mode,
+      players: ranking(room).map((p) => ({
+        id: p.id, name: p.name, status: p.status, me: p.id === playerId,
+        clicks: p.clicks ?? null, elapsed: p.elapsed ?? null,
+      })),
+    };
+    const json = JSON.stringify(board);
+    if (ext.boardSent !== json) {
+      ext.boardSent = json;
+      toExt('BOARD', { code: room.code, round: room.round, board });
     }
   }
 }
@@ -241,9 +258,27 @@ function enterRoom(code) {
       players: Object.entries(v.players || {}).map(([id, p]) => ({ id, ...p })),
     };
     if (prevPhase === 'countdown' && phase() === 'playing') toast('출발! 🏁');
+    announceArrivals();
     render();
     maintain();
   });
+}
+
+// 게임 화면에서도 다른 사람이 도착하면 알림
+let arrivalsSeen = { key: null, ids: new Set() };
+function announceArrivals() {
+  const key = raceKey();
+  const finished = room.players.filter((p) => p.status === 'finished');
+  if (arrivalsSeen.key !== key) {
+    arrivalsSeen = { key, ids: new Set(finished.map((p) => p.id)) };
+    return;
+  }
+  if (room.state !== 'playing') return;
+  for (const p of finished) {
+    if (arrivalsSeen.ids.has(p.id)) continue;
+    arrivalsSeen.ids.add(p.id);
+    if (p.id !== playerId) toast(`🎉 ${p.name}님 도착! (${fmtTimePrecise(p.elapsed)} · ${p.clicks}클릭)`);
+  }
 }
 
 // 접속 상태 표시: 연결이 끊기면 서버가 자동으로 online=false 처리

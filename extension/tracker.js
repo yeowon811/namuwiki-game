@@ -94,5 +94,6 @@ export function summary(race) {
     finished: race.finished,
     finishT: race.finishT,
     hasTab: race.tabId != null,
+    board: race.board || null, // 게임 페이지가 보내준 실시간 순위
   };
 }

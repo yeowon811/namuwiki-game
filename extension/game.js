@@ -20,7 +20,7 @@
     if (e.source !== window || e.data?.source !== 'nr-page') return;
     const { source, ...msg } = e.data;
     if (msg.type === 'PING') return hello();
-    if (!['RACE', 'OPEN_START', 'STOP'].includes(msg.type)) return;
+    if (!['RACE', 'OPEN_START', 'STOP', 'BOARD'].includes(msg.type)) return;
     try {
       const res = await chrome.runtime.sendMessage(msg);
       if (res && 'race' in res) post('STATE', { race: res.race });
