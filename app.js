@@ -1,6 +1,6 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import {
-  getDatabase, ref, get, set, update, remove, onValue, onDisconnect, serverTimestamp, runTransaction,
+  getDatabase, ref, get, set, update, remove, push, onValue, onDisconnect, serverTimestamp, runTransaction,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
 import { firebaseConfig } from './firebase-config.js';
 import KEYWORDS from './keywords.js';
@@ -394,6 +394,7 @@ async function leaveRoom() {
   const others = (r?.players || []).filter((p) => p.id !== playerId);
   if (others.length === 0) {
     await remove(roomRef(code));
+    remove(ref(db, `lobbies/${code}`)).catch(() => {});
     return;
   }
   const updates = { [`players/${playerId}`]: null };
@@ -468,8 +469,34 @@ function endRound() {
 }
 
 // 누구나 실행해도 결과가 같은(멱등) 정리 작업: 라운드 종료, 방장 넘기기
+// 방장은 시작 화면의 '열려 있는 방' 목록에 방 요약을 올림 (30초마다 갱신)
+const LOBBY_BEAT_MS = 30 * 1000;
+const LOBBY_FRESH_MS = 90 * 1000; // 이 시간 동안 갱신이 없으면 목록에서 숨김
+let lobbySent = { key: null, at: 0 };
+function publishLobby() {
+  if (!room || !isHost()) return;
+  const lobbyRef = ref(db, `lobbies/${room.code}`);
+  if (room.public === false) {
+    if (lobbySent.key !== 'hidden') { lobbySent = { key: 'hidden', at: Date.now() }; remove(lobbyRef).catch(() => {}); }
+    return;
+  }
+  const host = room.players.find((p) => p.id === room.hostId);
+  const summary = {
+    name: host?.name || '',
+    e: host ? charOf(host).e : '',
+    count: room.players.length,
+    state: room.state,
+    mode: room.mode,
+  };
+  const key = JSON.stringify(summary);
+  if (key === lobbySent.key && Date.now() - lobbySent.at < LOBBY_BEAT_MS) return;
+  lobbySent = { key, at: Date.now() };
+  set(lobbyRef, { ...summary, updatedAt: serverTimestamp() }).catch((e) => console.warn('[방 목록]', e.message));
+}
+
 function maintain() {
   if (!room) return;
+  publishLobby();
   if (isHost() && room.ghosts?.length) {
     const fix = {};
     for (const id of room.ghosts) fix[`players/${id}`] = null;
@@ -495,6 +522,59 @@ function maintain() {
     }
   }
 }
+
+// ---------- 시작 화면: 열려 있는 방 ----------
+let lobbies = {};
+let unsubLobbies = null;
+let lobbyTimer = null;
+function watchLobbies() {
+  if (unsubLobbies) return;
+  unsubLobbies = onValue(ref(db, 'lobbies'), (snap) => {
+    lobbies = snap.val() || {};
+    renderLobbies();
+  }, (err) => {
+    console.warn('[방 목록]', err.message);
+    unsubLobbies = null;
+    $('#open-rooms').innerHTML = '<li class="empty">방 목록을 불러오지 못했어요. 방 코드로 참가해 주세요.</li>';
+  });
+  lobbyTimer = setInterval(renderLobbies, 15000); // 오래된 방이 목록에서 사라지도록
+}
+function unwatchLobbies() {
+  unsubLobbies?.();
+  unsubLobbies = null;
+  clearInterval(lobbyTimer);
+}
+const STATE_TAG = {
+  lobby: '<span class="tag tag-success">대기 중</span>',
+  playing: '<span class="tag tag-processing">게임 중</span>',
+  results: '<span class="tag tag-warning">결과 보는 중</span>',
+};
+function renderLobbies() {
+  const t = now();
+  const all = Object.entries(lobbies);
+  // 하루 넘게 방치된 항목은 정리
+  for (const [code, l] of all) if (t - (l?.updatedAt || 0) > 24 * 3600 * 1000) remove(ref(db, `lobbies/${code}`)).catch(() => {});
+  const open = all
+    .filter(([, l]) => l && t - (l.updatedAt || 0) < LOBBY_FRESH_MS && l.count > 0)
+    .sort(([, a], [, b]) => (a.state === 'lobby' ? 0 : 1) - (b.state === 'lobby' ? 0 : 1) || (b.updatedAt || 0) - (a.updatedAt || 0));
+  $('#open-rooms-count').textContent = open.length ? `${open.length}개` : '';
+  $('#open-rooms').innerHTML = open.length
+    ? open.map(([code, l]) => {
+      const full = l.count >= MAX_PLAYERS;
+      const e = CHAR_EMOJIS.includes(l.e) ? l.e : '🏁';
+      return `<li><span class="avatar" style="background:var(--color-primary-bg);font-size:18px">${e}</span>`
+        + `<div class="info"><span class="title">${esc(l.name || '이름 없음')}님의 방</span>`
+        + `<span class="meta">${STATE_TAG[l.state] || ''}<span class="tag">${esc(modeLabel(l.mode))}</span>${l.count}명 · ${code}</span></div>`
+        + `<button class="btn btn-primary" data-join="${esc(code)}" ${full ? 'disabled' : ''}>${full ? '가득 참' : '참가하기'}</button></li>`;
+    }).join('')
+    : '<li class="empty">지금 열려 있는 방이 없어요. 방을 만들어 보세요!</li>';
+}
+$('#open-rooms').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-join]');
+  if (!b) return;
+  const name = getName();
+  if (name) guarded(b, () => joinRoom(b.dataset.join, name));
+});
 
 // ---------- 홈 이벤트 ----------
 function getName() {
@@ -533,6 +613,7 @@ $$('.btn-leave').forEach((b) => (b.onclick = () => confirm('방에서 나갈까�
 // ---------- 로비 이벤트 ----------
 $$('#mode-seg button').forEach((b) => (b.onclick = () => isHost() && update(roomRef(room.code), { mode: b.dataset.mode })));
 $('#time-limit').onchange = (e) => isHost() && update(roomRef(room.code), { timeLimitMin: Number(e.target.value) });
+$('#public-room').onclick = () => isHost() && update(roomRef(room.code), { public: room.public === false });
 $('#winners').onchange = (e) => isHost() && update(roomRef(room.code), { winners: Number(e.target.value) });
 $('#legs').onchange = (e) => isHost() && update(roomRef(room.code), { legs: Number(e.target.value) });
 $('#round-trip').onclick = () => isHost() && update(roomRef(room.code), { roundTrip: !room.roundTrip });
@@ -542,6 +623,45 @@ $('#btn-copy').onclick = async () => {
   try { await navigator.clipboard.writeText(url); toast('초대 링크를 복사했어요!', 'success'); }
   catch { prompt('이 링크를 복사해서 보내세요', url); }
 };
+
+// ---------- 대기실 광장 이벤트 ----------
+$('#plaza').addEventListener('click', (e) => {
+  if (!room || !me() || plaza3d) return;
+  const r = e.currentTarget.getBoundingClientRect();
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  const x = Math.round(clamp((e.clientX - r.left) / r.width, 0.06, 0.94) * 1000) / 1000;
+  const y = Math.round(clamp((e.clientY - r.top) / r.height, 0.22, 0.86) * 1000) / 1000;
+  update(roomRef(room.code, 'players', playerId), { pos: { x, y } });
+});
+$('#btn-char').onclick = (e) => {
+  const open = $('#char-picker').classList.toggle('hidden') === false;
+  e.currentTarget.setAttribute('aria-expanded', String(open));
+  e.currentTarget.textContent = open ? '닫기' : '내 캐릭터 바꾸기';
+};
+$('#char-picker').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b || !room || !me()) return;
+  const cur = charOf(me());
+  update(roomRef(room.code, 'players', playerId), { char: { e: b.dataset.e || cur.e, c: b.dataset.c || cur.c } });
+});
+let lastChatAt = 0;
+$('#chat-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const input = $('#chat-input');
+  const text = input.value.replace(/\s+/g, ' ').trim().slice(0, 100);
+  if (!text || !room || !me()) return;
+  if (Date.now() - lastChatAt < 600) return; // 도배 방지
+  lastChatAt = Date.now();
+  input.value = '';
+  push(roomRef(room.code, 'chat'), { pid: playerId, name: me().name, e: charOf(me()).e, text, t: serverTimestamp() });
+  // 오래된 대화는 정리 (최근 60개만 남김)
+  const all = chatList();
+  if (all.length > 80) {
+    const old = {};
+    for (const m of all.slice(0, all.length - 60)) old[`chat/${m.id}`] = null;
+    update(roomRef(room.code), old);
+  }
+});
 
 // ---------- 게임 이벤트 ----------
 $('#btn-giveup').onclick = () => {
@@ -633,12 +753,150 @@ $('#arrive-form').addEventListener('submit', async (e) => {
 // ---------- 렌더링 ----------
 // 이름으로 정해지는 아바타 색 (antd 프리셋 색상)
 const AVATAR_COLORS = ['#1677ff', '#13c2c2', '#52c41a', '#fa8c16', '#eb2f96', '#722ed1', '#2f54eb', '#faad14', '#f5222d', '#a0d911'];
+// ---------- 캐릭터 ----------
+const CHAR_EMOJIS = ['🐱', '🐶', '🦊', '🐻', '🐼', '🐰', '🐯', '🦁', '🐸', '🐵', '🐧', '🐤', '🐨', '🐷', '🐮', '🐹', '🦄', '🐙', '🐳', '🦖'];
+const hashOf = (id, salt = 0) => {
+  let h = salt;
+  for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return h;
+};
+// 고른 캐릭터가 없으면 아이디로 정해지는 기본 캐릭터
+function charOf(p) {
+  const e = CHAR_EMOJIS.includes(p?.char?.e) ? p.char.e : CHAR_EMOJIS[hashOf(p?.id) % CHAR_EMOJIS.length];
+  const c = AVATAR_COLORS.includes(p?.char?.c) ? p.char.c : AVATAR_COLORS[hashOf(p?.id, 7) % AVATAR_COLORS.length];
+  return { e, c };
+}
+// 광장 위치 (0~1). 아직 안 움직였으면 아이디로 정해지는 자리
+function posOf(p) {
+  const ok = (v) => typeof v === 'number' && v >= 0 && v <= 1;
+  if (ok(p?.pos?.x) && ok(p?.pos?.y)) return p.pos;
+  return { x: 0.12 + ((hashOf(p.id, 3) % 1000) / 1000) * 0.76, y: 0.3 + ((hashOf(p.id, 5) % 1000) / 1000) * 0.45 };
+}
+
 function avatar(p) {
-  let h = 0;
-  for (const ch of p.id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  const initial = [...(p.name || '?')][0].toUpperCase();
-  return `<span class="avatar" style="background:${AVATAR_COLORS[h % AVATAR_COLORS.length]}">${esc(initial)}`
+  const { e, c } = charOf(p);
+  return `<span class="avatar" style="background:${c};font-size:18px">${e}`
     + `<span class="badge-dot ${p.online ? '' : 'off'}" title="${p.online ? '접속 중' : '연결 끊김'}"></span></span>`;
+}
+
+// ---------- 대기실 광장 ----------
+const BUBBLE_MS = 6000;
+const chatList = () => Object.entries(room?.chat || {}).sort(([a], [b]) => (a < b ? -1 : 1)).map(([id, m]) => ({ id, ...m }));
+
+// 3D 광장: three.js를 불러올 수 있고 WebGL이 되면 3D, 아니면 아래 2D 광장
+let plaza3d = null;
+let plaza3dState = 'idle'; // idle → loading → ready | failed
+function webglOk() {
+  try {
+    const c = document.createElement('canvas');
+    return !!(c.getContext('webgl2') || c.getContext('webgl'));
+  } catch { return false; }
+}
+function loadPlaza3D() {
+  if (plaza3dState !== 'idle') return;
+  if (!webglOk()) { plaza3dState = 'failed'; return; }
+  plaza3dState = 'loading';
+  import('./plaza3d.js?v=2')
+    .then(({ createPlaza3D }) => {
+      const el = $('#plaza');
+      plaza3d = createPlaza3D(el, {
+        onMove: (x, y) => room && me() && update(roomRef(room.code, 'players', playerId), { pos: { x, y } }),
+      });
+      el.classList.add('is-3d');
+      el.querySelectorAll('.pz').forEach((n) => el.removeChild(n));
+      plaza3dState = 'ready';
+      if (room && phase() === 'lobby') renderPlaza();
+      else plaza3d.pause();
+    })
+    .catch((e) => {
+      console.warn('3D 광장을 불러오지 못해 2D로 표시해요.', e);
+      plaza3dState = 'failed';
+    });
+}
+
+function renderPlaza() {
+  const el = $('#plaza');
+  loadPlaza3D();
+  if (plaza3d) {
+    plaza3d.resume();
+    plaza3d.update(room.players.map((p) => ({ id: p.id, name: p.name, ...charOf(p), ...posOf(p), online: p.online, me: p.id === playerId })));
+    renderBubbles();
+    return;
+  }
+  const keep = new Set();
+  for (const p of room.players) {
+    keep.add(p.id);
+    let node = [...el.querySelectorAll('.pz')].find((n) => n.dataset.pid === p.id);
+    if (!node) {
+      node = document.createElement('div');
+      node.className = 'pz';
+      node.dataset.pid = p.id;
+      node.innerHTML = '<div class="bubble"></div><div class="body"></div><div class="nm"></div>';
+      el.appendChild(node);
+    }
+    const { e, c } = charOf(p);
+    const { x, y } = posOf(p);
+    node.classList.toggle('me', p.id === playerId);
+    node.classList.toggle('off', !p.online);
+    const body = node.querySelector('.body');
+    body.textContent = e;
+    body.style.background = c;
+    node.querySelector('.nm').textContent = p.name;
+    const key = `${x},${y}`;
+    if (node.dataset.pos && node.dataset.pos !== key) {
+      node.classList.remove('walk');
+      void node.offsetWidth;
+      node.classList.add('walk');
+    }
+    node.dataset.pos = key;
+    node.style.left = `${x * 100}%`;
+    node.style.top = `${y * 100}%`;
+  }
+  // 나간 사람의 캐릭터는 광장에서 치움
+  el.querySelectorAll('.pz').forEach((n) => { if (!keep.has(n.dataset.pid)) el.removeChild(n); });
+  renderBubbles();
+}
+
+// 최근 6초 안에 한 말을 머리 위 말풍선으로
+function renderBubbles() {
+  if (!room) return;
+  const latest = new Map();
+  const cutoff = now() - BUBBLE_MS;
+  for (const m of chatList()) if (typeof m.t === 'number' && m.t >= cutoff) latest.set(m.pid, m.text);
+  if (plaza3d) { plaza3d.setBubbles(latest); return; }
+  $$('#plaza .pz').forEach((n) => {
+    const text = latest.get(n.dataset.pid) || '';
+    const b = n.querySelector('.bubble');
+    if (b.textContent !== text) b.textContent = text;
+  });
+}
+
+let chatSig = null;
+function renderChat() {
+  const msgs = chatList().slice(-50);
+  const last = msgs[msgs.length - 1];
+  const sig = `${msgs.length}/${last?.id || ''}/${last?.t || ''}/${room.players.map((p) => p.char?.e).join('')}`;
+  if (sig === chatSig) return;
+  chatSig = sig;
+  const log = $('#chat-log');
+  const nearBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
+  log.innerHTML = msgs.map((m) => {
+    const p = room.players.find((x) => x.id === m.pid);
+    const e = p ? charOf(p).e : (CHAR_EMOJIS.includes(m.e) ? m.e : '');
+    return `<li class="${m.pid === playerId ? 'me' : ''}"><span class="who"><span class="em">${e}</span>${esc(p?.name || m.name)}</span><span class="txt">${esc(m.text)}</span></li>`;
+  }).join('');
+  if (nearBottom || last?.pid === playerId) log.scrollTop = log.scrollHeight;
+}
+
+function renderPicker() {
+  const mine = charOf(me());
+  const emo = $('#char-emojis');
+  if (!emo.children.length) {
+    emo.innerHTML = CHAR_EMOJIS.map((e) => `<button type="button" data-e="${e}" aria-label="${e} 캐릭터">${e}</button>`).join('');
+    $('#char-colors').innerHTML = AVATAR_COLORS.map((c) => `<button type="button" data-c="${c}" style="background:${c}" aria-label="색 ${c}"></button>`).join('');
+  }
+  emo.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.e === mine.e));
+  $$('#char-colors button').forEach((b) => b.classList.toggle('active', b.dataset.c === mine.c));
 }
 function playerRow(p, extra = '') {
   const tags = [];
@@ -653,7 +911,9 @@ function render() {
   const ph = phase();
   lastPhase = ph;
   $('#ext-installed').classList.toggle('hidden', !ext.ready);
-  if (ph === 'home') { syncExt(); return show('home'); }
+  if (ph !== 'lobby') plaza3d?.pause();
+  if (ph === 'home') { syncExt(); watchLobbies(); return show('home'); }
+  unwatchLobbies();
   const host = isHost();
   const my = me();
 
@@ -668,6 +928,8 @@ function render() {
     $('#winners-item').classList.toggle('hidden', room.mode === 'clicks');
     $('#winners').value = String(room.winners || 1);
     $('#winners').disabled = !host;
+    $('#public-room').setAttribute('aria-checked', String(room.public !== false));
+    $('#public-room').disabled = !host;
     $('#legs-item').classList.toggle('hidden', room.mode !== 'relay');
     $('#legs').value = String(room.legs || 2);
     $('#legs').disabled = !host;
@@ -682,6 +944,9 @@ function render() {
     const sorted = [...room.players].sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0));
     $('#lobby-count').textContent = `${room.players.length}명`;
     $('#lobby-players').innerHTML = sorted.map((p) => playerRow(p)).join('');
+    renderPlaza();
+    renderChat();
+    renderPicker();
     $('#btn-start').classList.toggle('hidden', !host);
     $('#wait-host').classList.toggle('hidden', host);
   } else if (ph === 'countdown') {
@@ -801,6 +1066,7 @@ function tick() {
   if (!room) return;
   const ph = phase();
   if (ph !== lastPhase) { render(); maintain(); return; }
+  if (ph === 'lobby') renderBubbles();
   if (ph === 'countdown') {
     $('#countdown').textContent = Math.max(1, Math.ceil((room.startAt - now()) / 1000));
   } else if (ph === 'playing') {
@@ -824,6 +1090,7 @@ setInterval(maintain, 5000);
 
 // ---------- 시작: 새로고침했으면 같은 방으로 자동 복귀 ----------
 show('home');
+watchLobbies();
 const savedCode = store.get('nr.room', ss);
 if (savedCode) {
   joinRoom(savedCode, store.get('nr.name') || '').catch(() => {
