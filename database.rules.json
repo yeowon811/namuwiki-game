@@ -51,6 +51,28 @@
           ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 30"
         }
       }
+    },
+    "daily": {
+      ".read": true,
+      "$date": {
+        ".validate": "$date.matches(/^20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]$/)",
+        "puzzle": {
+          ".write": "!data.exists()",
+          ".validate": "newData.hasChildren(['start', 'targets'])"
+        },
+        "best": {
+          "$pid": {
+            ".write": true,
+            ".validate": "newData.hasChildren(['name', 'ms'])",
+            "name": {
+              ".validate": "newData.isString() && newData.val().length <= 16"
+            },
+            "ms": {
+              ".validate": "newData.isNumber() && newData.val() > 0"
+            }
+          }
+        }
+      }
     }
   }
 }

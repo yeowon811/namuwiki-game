@@ -504,6 +504,24 @@ code {
 .open-rooms li.empty { justify-content: center; color: var(--color-text-tertiary); font-size: 13px; padding: 20px 0; }
 .open-rooms .btn { flex: none; }
 
+/* ---------- 오늘의 챔피언 ---------- */
+.daily .card-title .ic { color: var(--color-warning); }
+.daily-route { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-weight: 600; font-size: 16px; }
+.daily-route .lock { display: inline-flex; align-items: center; gap: 4px; font-weight: 400; font-size: 13px; color: var(--color-text-tertiary);
+  padding: 0 8px; line-height: 24px; border-radius: var(--radius-sm); background: var(--color-fill-tertiary); }
+.daily-route .sep { color: var(--color-text-quaternary); font-size: 12px; }
+.daily-desc { margin: 8px 0 12px; }
+.daily-top { list-style: none; margin: 0 0 8px; padding: 0; }
+.daily-top li { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--color-border-secondary); }
+.daily-top li:last-child { border-bottom: 1px solid var(--color-border-secondary); }
+.daily-top .md { width: 22px; text-align: center; font-size: 18px; }
+.daily-top .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.daily-top .tm { font-variant-numeric: tabular-nums; font-weight: 600; }
+.daily-top li.me .nm { color: var(--color-primary); }
+.daily-top li.empty { justify-content: center; color: var(--color-text-tertiary); font-size: 13px; padding: 16px 0; }
+.daily-mine { margin: 0 0 12px; font-size: 13px; color: var(--color-text-secondary); min-height: 1em; }
+.daily-mine:empty { display: none; }
+
 /* ---------- 대기실 광장 ---------- */
 .btn-sm { height: 24px; padding: 0 7px; font-size: 14px; border-radius: var(--radius-sm); }
 .char-picker { padding: 12px 24px 4px; border-bottom: 1px solid var(--color-border-secondary); }

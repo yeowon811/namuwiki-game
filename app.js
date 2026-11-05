@@ -304,6 +304,7 @@ function enterRoom(code) {
     if (prevPhase === 'countdown' && phase() === 'playing') toast('출발! 링크만 타고 목표 문서까지 가세요.', 'success');
     if ((prevPhase === 'countdown' || prevPhase === 'playing') && phase() === 'results') showEnd();
     announceArrivals();
+    submitDailyIfDone();
     render();
     maintain();
   });
@@ -312,6 +313,16 @@ function enterRoom(code) {
 // 게임이 끝나면 화면 가운데에 '게임 완료!' 알림
 function showEnd() {
   const dlgEnd = $('#end-dialog');
+  if (room.daily) {
+    const mine = me();
+    $('#end-winner').innerHTML = mine?.status === 'finished' ? `도전 완료! <b>${fmtTimePrecise(mine.elapsed)}</b>` : '도착하지 못했어요';
+    const msg = dailyMsg.key === `${room.code}/${room.round}` ? dailyMsg.text : '기록을 확인하는 중…';
+    $('#end-sub').textContent = mine?.status === 'finished' ? msg : '다시 도전해 보세요!';
+    $('#end-podium').innerHTML = '';
+    if (dlg.open) dlg.close();
+    if (!$('#end-dialog').open) $('#end-dialog').showModal();
+    return;
+  }
   const finished = ranking(room).filter((p) => p.status === 'finished');
   const winner = finished[0];
   const myRank = finished.findIndex((p) => p.id === playerId) + 1;
@@ -414,14 +425,19 @@ function leaveLocal() {
   store.del('nr.room', ss);
   history.replaceState(null, '', location.pathname);
   if ($('#arrive-dialog').open) $('#arrive-dialog').close();
+  plaza3d?.pause();
   show('home');
+  // 시작 화면의 실시간 목록(열려 있는 방, 오늘의 챔피언) 다시 구독
+  watchLobbies();
+  watchDaily();
 }
 
 // ---------- 방장 동작 ----------
 function startRound() {
   if (!isHost()) return;
   const relay = room.mode === 'relay';
-  const picked = pickKeywords(room.round ? room : null, relay ? (room.legs || 2) : 1);
+  const picked = room.daily?.start ? { ...room.daily, target: room.daily.targets[room.daily.targets.length - 1] }
+    : pickKeywords(room.round ? room : null, relay ? (room.legs || 2) : 1);
   const { start } = picked;
   let { target, targets } = picked;
   // 릴레이 '시작 문서로 돌아오기': 마지막 목표로 시작 문서를 한 번 더 넣음
@@ -575,6 +591,147 @@ $('#open-rooms').addEventListener('click', (e) => {
   const name = getName();
   if (name) guarded(b, () => joinRoom(b.dataset.join, name));
 });
+
+// ---------- 오늘의 챔피언 ----------
+// 한국 시간 기준 날짜 (예: 2026-11-05)
+const todayKey = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(now()));
+// 날짜로 정해지는 난수 → 같은 날엔 누구나 같은 문제
+function seededPick(seed, n) {
+  let h = 2166136261;
+  for (const ch of seed) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0;
+  const rand = () => {
+    h = (h + 0x6D2B79F5) >>> 0;
+    let t = h;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const out = [];
+  while (out.length < n) {
+    const k = KEYWORDS[Math.floor(rand() * KEYWORDS.length)];
+    if (!out.includes(k)) out.push(k);
+  }
+  return out;
+}
+const dailyRef = (date, ...rest) => ref(db, ['daily', date, ...rest].join('/'));
+// 오늘의 문제: 처음 본 사람이 DB에 고정 (키워드 목록이 바뀌어도 그날 문제는 그대로)
+async function ensureDailyPuzzle(date) {
+  const [start, t1, t2] = seededPick(`namu-race/${date}`, 3);
+  const res = await runTransaction(dailyRef(date, 'puzzle'), (cur) => cur || { start, targets: [t1, t2] });
+  return res.snapshot.val();
+}
+
+let daily = { date: null, puzzle: null, best: {}, unsub: [] };
+function watchDaily() {
+  const date = todayKey();
+  if (daily.date === date && daily.unsub.length) return;
+  unwatchDaily();
+  daily = { date, puzzle: null, best: {}, unsub: [] };
+  $('#daily-date').textContent = date.replace(/^(\d+)-(\d+)-(\d+)$/, (_, y, m, d) => `${Number(m)}월 ${Number(d)}일`);
+  ensureDailyPuzzle(date).catch((e) => console.warn('[오늘의 챔피언]', e.message));
+  const fail = (e) => {
+    console.warn('[오늘의 챔피언]', e.message);
+    $('#daily-route').textContent = '오늘의 문제를 불러오지 못했어요.';
+    $('#btn-daily').disabled = true;
+  };
+  daily.unsub.push(onValue(dailyRef(date, 'puzzle'), (s) => { daily.puzzle = s.val(); renderDaily(); }, fail));
+  daily.unsub.push(onValue(dailyRef(date, 'best'), (s) => { daily.best = s.val() || {}; renderDaily(); }, fail));
+}
+function unwatchDaily() {
+  daily.unsub.forEach((u) => u());
+  daily.unsub = [];
+}
+function dailyRanking() {
+  return Object.entries(daily.best || {})
+    .filter(([, r]) => typeof r?.ms === 'number')
+    .map(([id, r]) => ({ id, ...r }))
+    .sort((a, b) => a.ms - b.ms || (a.at || 0) - (b.at || 0));
+}
+function renderDaily() {
+  const pz = daily.puzzle;
+  $('#btn-daily').disabled = !pz;
+  const lock = `<span class="lock">${icon('lock')}공개 전</span>`;
+  $('#daily-route').innerHTML = pz
+    ? `<span>${esc(pz.start)}</span>${icon('right', 'sep')}${lock}${icon('right', 'sep')}${lock}`
+    : '불러오는 중…';
+  const list = dailyRanking();
+  const medal = ['🥇', '🥈', '🥉'];
+  $('#daily-top').innerHTML = list.length
+    ? list.slice(0, 3).map((r, i) => `<li class="${r.id === playerId ? 'me' : ''}"><span class="md">${medal[i]}</span>`
+      + `<span class="nm">${CHAR_EMOJIS.includes(r.e) ? r.e + ' ' : ''}${esc(r.name)}</span><span class="tm">${fmtTimePrecise(r.ms)}</span></li>`).join('')
+    : '<li class="empty">아직 기록이 없어요. 첫 챔피언이 되어 보세요!</li>';
+  const myIdx = list.findIndex((r) => r.id === playerId);
+  $('#daily-mine').textContent = myIdx >= 0 ? `내 최고 기록 ${fmtTimePrecise(list[myIdx].ms)} · ${list.length}명 중 ${myIdx + 1}등` : '';
+}
+
+// 도전하기: 나 혼자 쓰는 비공개 릴레이 방을 만들고 바로 시작
+async function startDaily(name) {
+  const date = todayKey();
+  const pz = daily.puzzle?.start ? daily.puzzle : await ensureDailyPuzzle(date);
+  let code;
+  for (let i = 0; i < 10; i++) {
+    code = makeCode();
+    if (!(await get(roomRef(code))).exists()) break;
+  }
+  await set(roomRef(code), {
+    hostId: playerId,
+    mode: 'relay',
+    legs: 2,
+    timeLimitMin: 0,
+    state: 'lobby',
+    round: 0,
+    public: false,
+    daily: { date, start: pz.start, targets: pz.targets },
+    createdAt: serverTimestamp(),
+    players: { [playerId]: { name, status: 'waiting', online: true, joinedAt: serverTimestamp() } },
+  });
+  dailyAutoStart = code;
+  enterRoom(code);
+}
+let dailyAutoStart = null;
+let dailySubmitted = null;
+let dailyMsg = { key: null, text: '' }; // 기록 저장 결과 (게임 완료 창에 표시)
+
+// 내가 도착하면 오늘의 기록에 저장 (더 빠를 때만 갱신)
+function submitDailyIfDone() {
+  if (dailyAutoStart && room?.code === dailyAutoStart && room.state === 'lobby' && isHost()) {
+    dailyAutoStart = null;
+    startRound();
+    return;
+  }
+  const my = me();
+  if (!room?.daily || my?.status !== 'finished') return;
+  const key = `${room.code}/${room.round}`;
+  if (dailySubmitted === key) return;
+  dailySubmitted = key;
+  const setSub = (text) => {
+    dailyMsg = { key, text };
+    if ($('#end-dialog').open && room?.daily) $('#end-sub').textContent = text;
+  };
+  if (!my.auto) { setTimeout(() => setSub('수동 기록은 오늘의 챔피언 순위에 오르지 않아요. 확장 프로그램으로 도전해 주세요.'), 300); return; }
+  if (my.violations) { setTimeout(() => setSub(`링크 클릭이 아닌 이동이 ${my.violations}번 있어서 순위에 오르지 않았어요.`), 300); return; }
+  const ms = my.elapsed;
+  let improved = false;
+  let prev = null;
+  runTransaction(dailyRef(room.daily.date, 'best', playerId), (cur) => {
+    prev = cur?.ms ?? null;
+    if (cur && typeof cur.ms === 'number' && cur.ms <= ms) { improved = false; return undefined; }
+    improved = true;
+    return { name: my.name, e: charOf(my).e, ms, clicks: my.clicks ?? null, at: serverTimestamp() };
+  }).then(async () => {
+    const snap = await get(dailyRef(room?.daily?.date || todayKey(), 'best'));
+    const all = Object.entries(snap.val() || {}).map(([id, r]) => ({ id, ...r })).sort((a, b) => a.ms - b.ms);
+    const rank = all.findIndex((r) => r.id === playerId) + 1;
+    setSub(improved
+      ? `${prev == null ? '첫 기록 저장!' : `기록 갱신! (이전 ${fmtTimePrecise(prev)})`} 오늘 ${all.length}명 중 ${rank}등`
+      : `최고 기록 ${fmtTimePrecise(prev)}보다 느려서 갱신되지 않았어요. 지금 ${rank}등`);
+  }).catch((e) => setSub(`기록을 저장하지 못했어요. (${e.message})`));
+}
+
+$('#btn-daily').onclick = (e) => {
+  const name = getName();
+  if (name) guarded(e.currentTarget, () => startDaily(name));
+};
 
 // ---------- 홈 이벤트 ----------
 function getName() {
@@ -912,8 +1069,9 @@ function render() {
   lastPhase = ph;
   $('#ext-installed').classList.toggle('hidden', !ext.ready);
   if (ph !== 'lobby') plaza3d?.pause();
-  if (ph === 'home') { syncExt(); watchLobbies(); return show('home'); }
+  if (ph === 'home') { syncExt(); watchLobbies(); watchDaily(); return show('home'); }
   unwatchLobbies();
+  unwatchDaily();
   const host = isHost();
   const my = me();
 
@@ -1059,6 +1217,9 @@ function renderResults(host) {
   $('#res-list').innerHTML = items.join('') || '<li class="text-tertiary center">참가자가 없어요.</li>';
   $('#res-host').classList.toggle('hidden', !host);
   $('#res-wait').classList.toggle('hidden', host);
+  $('#btn-again').innerHTML = `${icon('redo')}${room.daily ? '다시 도전 (같은 문제)' : '다음 판 (새 키워드)'}`;
+  $('#btn-lobby').classList.toggle('hidden', !!room.daily);
+  $('#res-mode').textContent = room.daily ? `오늘의 챔피언 · ${room.daily.date}` : modeLabel(room.mode);
 }
 
 // 타이머 / 카운트다운 / 단계 전환
@@ -1091,6 +1252,7 @@ setInterval(maintain, 5000);
 // ---------- 시작: 새로고침했으면 같은 방으로 자동 복귀 ----------
 show('home');
 watchLobbies();
+watchDaily();
 const savedCode = store.get('nr.room', ss);
 if (savedCode) {
   joinRoom(savedCode, store.get('nr.name') || '').catch(() => {
