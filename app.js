@@ -959,11 +959,12 @@ function loadPlaza3D() {
   if (plaza3dState !== 'idle') return;
   if (!webglOk()) { plaza3dState = 'failed'; return; }
   plaza3dState = 'loading';
-  import('./plaza3d.js?v=4')
+  import('./plaza3d.js?v=6')
     .then(({ createPlaza3D }) => {
       const el = $('#plaza');
       plaza3d = createPlaza3D(el, {
-        onMove: (x, y) => room && me() && update(roomRef(room.code, 'players', playerId), { pos: { x, y } }),
+        onMove: (x, y, run) => room && me() && update(roomRef(room.code, 'players', playerId), { pos: { x, y, run: !!run } }),
+        onJump: () => room && me() && update(roomRef(room.code, 'players', playerId), { jumpAt: serverTimestamp() }),
       });
       el.classList.add('is-3d');
       el.querySelectorAll('.pz').forEach((n) => el.removeChild(n));
@@ -982,7 +983,11 @@ function renderPlaza() {
   loadPlaza3D();
   if (plaza3d) {
     plaza3d.resume();
-    plaza3d.update(room.players.map((p) => ({ id: p.id, name: p.name, ...charOf(p), ...posOf(p), online: p.online, me: p.id === playerId })));
+    plaza3d.update(room.players.map((p) => ({
+      id: p.id, name: p.name, ...charOf(p), ...posOf(p), run: !!p.pos?.run,
+      jumpAt: p.jumpAt || null, jumpAgo: p.jumpAt ? now() - p.jumpAt : Infinity,
+      online: p.online, me: p.id === playerId,
+    })));
     renderBubbles();
     return;
   }

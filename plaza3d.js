@@ -1,6 +1,6 @@
 // 대기실 3D 광장 (three.js)
 // - 각자 고른 색의 캐릭터 + 액세서리(모자, 안경, 수염, 목 장식)
-// - 방향키 / WASD / 바닥 클릭 / 화면 방향 버튼으로 이동
+// - 방향키 / WASD / 바닥 클릭 / 화면 방향 버튼으로 이동, Shift 달리기, Space 점프
 // - 이름표와 말풍선은 HTML로 캐릭터 머리 위에 띄움
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
 
@@ -9,7 +9,10 @@ const D = 7.5; // 광장 세로 (y 0~1 ↔ -3.75~3.75)
 const CHAR_SCALE = 1.5; // 캐릭터 크기
 const MIN = 0.05;
 const MAX = 0.95;
-const SPEED = 3.6; // 초당 이동 거리
+const SPEED = 3.6; // 초당 이동 거리 (걷기)
+const RUN_SPEED = 6.8; // 달리기
+const JUMP_MS = 600; // 점프 시간
+const JUMP_H = 1.1; // 점프 높이
 const SEND_MS = 150; // 내 위치를 서버에 보내는 간격
 
 const toWorld = (x, y) => new THREE.Vector3((x - 0.5) * W, 0, (y - 0.5) * D);
@@ -223,7 +226,7 @@ function makeCharacter(color, acc) {
   return { group: g, body, belly, feet, head: headGroup, mats };
 }
 
-export function createPlaza3D(container, { onMove }) {
+export function createPlaza3D(container, { onMove, onJump }) {
   const canvasWrap = document.createElement('div');
   canvasWrap.className = 'pz3';
   container.appendChild(canvasWrap);
@@ -245,6 +248,10 @@ export function createPlaza3D(container, { onMove }) {
     .map((d) => `<button type="button" data-dir="${d}" aria-label="${{ up: '위', left: '왼쪽', down: '아래', right: '오른쪽' }[d]}로 이동">${{ up: '▲', left: '◀', down: '▼', right: '▶' }[d]}</button>`)
     .join('');
   canvasWrap.appendChild(pad);
+  const acts = document.createElement('div');
+  acts.className = 'pz3-acts';
+  acts.innerHTML = '<button type="button" data-act="run" aria-pressed="false">달리기</button><button type="button" data-act="jump">점프</button>';
+  canvasWrap.appendChild(acts);
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(38, 2, 0.1, 100);
@@ -342,7 +349,8 @@ export function createPlaza3D(container, { onMove }) {
       label.className = 'pz3-label';
       label.innerHTML = '<div class="bubble"></div><div class="nm"></div>';
       labels.appendChild(label);
-      c = { ...made, pos, target: pos.clone(), label, look, walkT: 0, moving: false };
+      made.group.rotation.order = 'YXZ'; // 바라보는 방향으로 몸을 숙일 수 있게
+      c = { ...made, pos, target: pos.clone(), label, look, walkT: 0, moving: false, running: false, jumpStart: -1e9, jumpAt: null, dustT: 0 };
       chars.set(p.id, c);
     }
     return c;
@@ -354,16 +362,39 @@ export function createPlaza3D(container, { onMove }) {
   let clickTarget = null;
   const typing = (el) => el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
   const active = () => !paused && container.offsetParent !== null;
+  let runToggle = false; // 휴대폰 '달리기' 버튼
   function onKeyDown(e) {
+    if (!active() || typing(document.activeElement) || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') { keys.add('run'); return; }
+    if (e.code === 'Space') { e.preventDefault(); if (!e.repeat) jump(); return; }
     const dir = KEYMAP[e.code];
-    if (!dir || !active() || typing(document.activeElement) || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (!dir) return;
     e.preventDefault(); // 방향키로 페이지가 스크롤되지 않게
     keys.add(dir);
     clickTarget = null;
   }
   function onKeyUp(e) {
+    if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') keys.delete('run');
     const dir = KEYMAP[e.code];
     if (dir) keys.delete(dir);
+  }
+  const moveKeys = () => ['up', 'down', 'left', 'right'].some((k) => keys.has(k));
+
+  // 점프: 내 캐릭터는 바로 뛰고, 서버에 알려서 다른 사람 화면에서도 뛰게 함
+  function jump() {
+    const me = chars.get(myId);
+    if (!me || performance.now() - me.jumpStart < JUMP_MS) return;
+    me.jumpStart = performance.now();
+    onJump?.();
+  }
+  for (const b of acts.querySelectorAll('button')) {
+    b.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (b.dataset.act === 'jump') jump();
+      else { runToggle = !runToggle; b.setAttribute('aria-pressed', String(runToggle)); }
+    });
+    b.addEventListener('click', (e) => e.stopPropagation());
   }
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', onKeyUp);
@@ -419,6 +450,21 @@ export function createPlaza3D(container, { onMove }) {
   ro.observe(canvasWrap);
   resize();
 
+  // ---- 먼지 (달리기) ----
+  const dust = Array.from({ length: 24 }, () => {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 6), new THREE.MeshBasicMaterial({ color: 0xd9d9d9, transparent: true, opacity: 0 }));
+    m.visible = false;
+    scene.add(m);
+    return m;
+  });
+  let dustI = 0;
+  function puff(pos) {
+    const d = dust[dustI++ % dust.length];
+    d.position.set(pos.x + (Math.random() - 0.5) * 0.3, 0.1, pos.z + (Math.random() - 0.5) * 0.3);
+    d.userData.life = 0.45;
+    d.visible = true;
+  }
+
   // ---- 루프 ----
   let paused = false;
   let last = performance.now();
@@ -441,7 +487,8 @@ export function createPlaza3D(container, { onMove }) {
         if (v.length() < 0.05) { clickTarget = null; v.set(0, 0, 0); }
       }
       if (v.lengthSq() > 0) {
-        const dist = Math.min(SPEED * dt, clickTarget && !keys.size ? v.length() : Infinity);
+        me.running = keys.has('run') || runToggle;
+        const dist = Math.min((me.running ? RUN_SPEED : SPEED) * dt, clickTarget && !moveKeys() ? v.length() : Infinity);
         v.normalize();
         me.pos.addScaledVector(v, dist);
         clampWorld(me.pos);
@@ -452,11 +499,12 @@ export function createPlaza3D(container, { onMove }) {
       } else {
         me.moving = false;
       }
+      if (!me.moving) me.running = false;
       if (pendingSend && (t - lastSent > SEND_MS || !me.moving)) {
         lastSent = t;
         pendingSend = false;
         const u = toUnit(me.pos);
-        onMove(u.x, u.y);
+        onMove(u.x, u.y, me.moving && me.running);
       }
     }
     for (const [id, c] of chars) {
@@ -465,7 +513,7 @@ export function createPlaza3D(container, { onMove }) {
         const d = tmp.length();
         if (d > 0.02) {
           // 다른 사람은 받은 위치로 부드럽게 걸어감 (멀리 떨어지면 빠르게 따라잡음)
-          const move = Math.min(d, Math.max(SPEED, d * 3) * dt);
+          const move = Math.min(d, Math.max(c.running ? RUN_SPEED : SPEED, d * 3) * dt);
           c.pos.addScaledVector(tmp.normalize(), move);
           c.group.rotation.y = Math.atan2(tmp.x, tmp.z);
           c.moving = true;
@@ -473,16 +521,34 @@ export function createPlaza3D(container, { onMove }) {
           c.moving = false;
         }
       }
-      // 걷는 동작: 몸이 통통 튀고 발이 번갈아 나감
-      c.walkT = c.moving ? c.walkT + dt * 10 : 0;
-      const bob = c.moving ? Math.abs(Math.sin(c.walkT)) * 0.12 : 0;
-      c.group.position.set(c.pos.x, bob, c.pos.z);
-      c.feet[0].position.z = 0.04 + (c.moving ? Math.sin(c.walkT) * 0.16 : 0);
-      c.feet[1].position.z = 0.04 - (c.moving ? Math.sin(c.walkT) * 0.16 : 0);
-      c.feet[0].position.y = 0.1 - bob;
-      c.feet[1].position.y = 0.1 - bob;
+      // 걷기/달리기 동작: 몸이 통통 튀고 발이 번갈아 나감. 달리면 더 빠르고 크게, 몸을 앞으로 숙임
+      const run = c.moving && c.running;
+      c.walkT = c.moving ? c.walkT + dt * (run ? 17 : 10) : 0;
+      const bob = c.moving ? Math.abs(Math.sin(c.walkT)) * (run ? 0.2 : 0.12) : 0;
+      const stride = run ? 0.28 : 0.16;
+      // 점프: 포물선으로 올라갔다 내려옴
+      const jp = (t - c.jumpStart) / JUMP_MS;
+      const jumpY = jp >= 0 && jp < 1 ? Math.sin(jp * Math.PI) * JUMP_H : 0;
+      c.group.position.set(c.pos.x, bob + jumpY, c.pos.z);
+      c.group.rotation.x += ((run ? 0.22 : 0) - c.group.rotation.x) * Math.min(1, dt * 10);
+      const tuck = jumpY > 0 ? 0.08 : 0; // 공중에서는 발을 살짝 모음
+      c.feet[0].position.z = 0.04 + (c.moving && !jumpY ? Math.sin(c.walkT) * stride : 0);
+      c.feet[1].position.z = 0.04 - (c.moving && !jumpY ? Math.sin(c.walkT) * stride : 0);
+      c.feet[0].position.y = 0.1 - (jumpY ? 0 : bob) + tuck;
+      c.feet[1].position.y = 0.1 - (jumpY ? 0 : bob) + tuck;
+      // 달릴 때 발밑에 먼지
+      if (run && !jumpY && (c.dustT += dt) > 0.09) { c.dustT = 0; puff(c.pos); }
     }
     if (me) myRing.position.set(me.pos.x, 0.02, me.pos.z);
+    for (const d of dust) {
+      if (!d.visible) continue;
+      d.userData.life -= dt;
+      if (d.userData.life <= 0) { d.visible = false; continue; }
+      const k = d.userData.life / 0.45;
+      d.material.opacity = 0.55 * k;
+      d.scale.setScalar(0.6 + (1 - k) * 1.4);
+      d.position.y += dt * 0.5;
+    }
 
     // 깃발 펄럭임
     const arr = flag.geometry.attributes.position.array;
@@ -519,6 +585,12 @@ export function createPlaza3D(container, { onMove }) {
           }
         } else {
           c.target.copy(toWorld(p.x, p.y));
+          c.running = !!p.run;
+          // 다른 사람이 점프하면 (1초 안에 일어난 점프만) 따라서 뜀
+          if (p.jumpAt && p.jumpAt !== c.jumpAt) {
+            if (p.jumpAgo < 1000) c.jumpStart = performance.now() - Math.max(0, p.jumpAgo);
+            c.jumpAt = p.jumpAt;
+          }
         }
         c.label.classList.toggle('me', !!p.me);
         c.label.classList.toggle('off', !p.online);
@@ -547,6 +619,8 @@ export function createPlaza3D(container, { onMove }) {
       if (paused) return;
       paused = true;
       keys.clear();
+      runToggle = false;
+      acts.querySelector('[data-act="run"]').setAttribute('aria-pressed', 'false');
       renderer.setAnimationLoop(null);
     },
     resume() {

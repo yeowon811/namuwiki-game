@@ -622,7 +622,14 @@ code {
 .pz3-pad button:active { background: var(--color-primary); color: #fff; }
 .pz3-pad [data-dir="up"] { grid-area: u; } .pz3-pad [data-dir="left"] { grid-area: l; }
 .pz3-pad [data-dir="down"] { grid-area: d; } .pz3-pad [data-dir="right"] { grid-area: r; }
-@media (pointer: coarse) { .pz3-pad { display: grid; } }
+.pz3-acts { position: absolute; left: 10px; bottom: 26px; z-index: 4; display: none; gap: 6px; }
+.pz3-acts button {
+  height: 40px; padding: 0 14px; border: 0; border-radius: 20px; font: inherit; font-size: 14px; font-weight: 500; cursor: pointer;
+  color: var(--color-text); background: color-mix(in srgb, var(--color-bg-elevated) 85%, transparent); box-shadow: 0 1px 3px rgba(0,0,0,.18);
+  touch-action: none; user-select: none; -webkit-user-select: none;
+}
+.pz3-acts button[aria-pressed="true"], .pz3-acts button:active { background: var(--color-primary); color: #fff; }
+@media (pointer: coarse) { .pz3-pad, .pz3-acts { display: grid; } .pz3-acts { display: flex; } }
 @media (max-width: 480px) { .plaza.is-3d { height: 300px; } }
 .chat-log { list-style: none; margin: 0; padding: 8px 24px; height: 150px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
 .chat-log li { display: flex; gap: 6px; align-items: baseline; font-size: 14px; line-height: 1.5; }
