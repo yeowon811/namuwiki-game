@@ -1,5 +1,8 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import {
+  getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut,
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+import {
   getDatabase, ref, get, set, update, remove, push, onValue, onDisconnect, serverTimestamp, runTransaction,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
 import { firebaseConfig } from './firebase-config.js';
@@ -22,11 +25,11 @@ const store = {
   del(k, s = ls) { try { s && s.removeItem(k); } catch {} },
 };
 const newId = () => (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36));
-let playerId = store.get('nr.playerId');
-if (!playerId) { playerId = newId(); store.set('nr.playerId', playerId); }
+let playerId = null; // 로그인한 회원의 uid
 
 // ---------- Firebase ----------
-const db = getDatabase(initializeApp(firebaseConfig));
+const firebaseApp = initializeApp(firebaseConfig);
+const db = getDatabase(firebaseApp);
 let clockOffset = 0; // 서버시간 - 내시간
 onValue(ref(db, '.info/serverTimeOffset'), (s) => { clockOffset = s.val() || 0; });
 const now = () => Date.now() + clockOffset;
@@ -158,8 +161,6 @@ function renderProgress() {
     + (r.violations ? `<br><span class="warn">링크 클릭이 아닌 이동 ${r.violations}회</span>` : '');
 }
 
-const nameInput = $('#name');
-nameInput.value = store.get('nr.name') || '';
 const params = new URLSearchParams(location.search);
 // 초대 링크(?room=ABCD)로 들어오면 '초대받은 방 참가하기' 버튼을 보여줌
 const inviteCode = /^[A-Z0-9]{4}$/i.test(params.get('room') || '') ? params.get('room').toUpperCase() : null;
@@ -311,6 +312,7 @@ function enterRoom(code) {
     if ((prevPhase === 'countdown' || prevPhase === 'playing') && phase() === 'results') showEnd();
     announceArrivals();
     submitDailyIfDone();
+    claimRoundRewards();
     render();
     maintain();
   });
@@ -432,10 +434,7 @@ function leaveLocal() {
   history.replaceState(null, '', location.pathname);
   if ($('#arrive-dialog').open) $('#arrive-dialog').close();
   plaza3d?.pause();
-  show('home');
-  // 시작 화면의 실시간 목록(열려 있는 방, 오늘의 챔피언) 다시 구독
-  watchLobbies();
-  watchDaily();
+  showHome();
 }
 
 // ---------- 방장 동작 ----------
@@ -740,11 +739,10 @@ $('#btn-daily').onclick = (e) => {
 };
 
 // ---------- 홈 이벤트 ----------
+// 게임에서 쓰는 이름 = 회원 닉네임
 function getName() {
-  const n = cleanName(nameInput.value);
-  if (!n) { setHomeError('닉네임을 입력해주세요.'); nameInput.focus(); return null; }
-  store.set('nr.name', n);
-  return n;
+  if (!profile?.approved) { setHomeError('로그인이 필요해요.'); return null; }
+  return profile.nick;
 }
 async function guarded(btn, fn) {
   btn.disabled = true;
@@ -764,9 +762,7 @@ function joinInvite() {
   if (name && inviteCode) guarded($('#btn-invite'), () => joinRoom(inviteCode, name));
 }
 $('#btn-invite').onclick = joinInvite;
-nameInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') (inviteCode ? joinInvite() : $('#btn-create').click());
-});
+
 $$('.btn-leave').forEach((b) => (b.onclick = () => confirm('방에서 나갈까요?') && leaveRoom()));
 
 // ---------- 로비 이벤트 ----------
@@ -1084,7 +1080,7 @@ function render() {
   lastPhase = ph;
   $('#ext-installed').classList.toggle('hidden', !ext.ready);
   if (ph !== 'lobby') plaza3d?.pause();
-  if (ph === 'home') { syncExt(); watchLobbies(); watchDaily(); return show('home'); }
+  if (ph === 'home') { syncExt(); return showHome(); }
   unwatchLobbies();
   unwatchDaily();
   const host = isHost();
@@ -1264,14 +1260,350 @@ function tick() {
 setInterval(tick, 200);
 setInterval(maintain, 5000);
 
-// ---------- 시작: 새로고침했으면 같은 방으로 자동 복귀 ----------
-show('home');
-watchLobbies();
-watchDaily();
-const savedCode = store.get('nr.room', ss);
-if (savedCode) {
-  joinRoom(savedCode, store.get('nr.name') || '').catch(() => {
-    store.del('nr.room', ss);
-    toast('이전 방에 다시 들어가지 못했어요.', 'warning');
-  });
+
+// ---------- 계정: 로그인 / 회원가입 / 승인 ----------
+const auth = getAuth(firebaseApp);
+const ID_RE = /^[a-z0-9_]{4,16}$/;
+const EMAIL_DOMAIN = 'namurace.app'; // 아이디를 Firebase 로그인용 이메일로 바꿀 때 쓰는 가짜 도메인
+const idToEmail = (id) => `${id}@${EMAIL_DOMAIN}`;
+let authUser = null;
+let profile = null; // users/<uid>
+let isAdmin = false;
+let profileUnsubs = [];
+let authReady = false;
+let profileLoaded = false; // users/<uid>를 한 번이라도 받았는지
+
+function authMessage(e) {
+  const code = e?.code || '';
+  if (/email-already-in-use/.test(code)) return '이미 사용 중인 아이디예요.';
+  if (/invalid-credential|wrong-password|user-not-found|invalid-email/.test(code)) return '아이디 또는 비밀번호가 맞지 않아요.';
+  if (/weak-password/.test(code)) return '비밀번호는 6자 이상이어야 해요.';
+  if (/too-many-requests/.test(code)) return '시도가 너무 많아요. 잠시 후 다시 해주세요.';
+  if (/operation-not-allowed|configuration-not-found/.test(code)) return 'Firebase에서 이메일/비밀번호 로그인이 꺼져 있어요. 관리자에게 알려주세요.';
+  if (/network/.test(code)) return '인터넷 연결을 확인해주세요.';
+  if (/permission.denied/i.test(`${code} ${e?.message}`)) return '권한이 없어요. 데이터베이스 규칙을 확인해주세요.';
+  return e?.message || '오류가 발생했어요.';
 }
+
+// 로그인 / 회원가입 탭
+$$('#auth-tabs button').forEach((b) => (b.onclick = () => {
+  $$('#auth-tabs button').forEach((x) => x.classList.toggle('active', x === b));
+  $('#login-form').classList.toggle('hidden', b.dataset.tab !== 'login');
+  $('#signup-form').classList.toggle('hidden', b.dataset.tab !== 'signup');
+  $('#auth-error').textContent = '';
+}));
+
+async function authGuard(form, fn) {
+  const btn = form.querySelector('button[type="submit"]');
+  btn.disabled = true;
+  $('#auth-error').textContent = '';
+  try { await fn(); } catch (e) { console.warn(e); $('#auth-error').textContent = authMessage(e); }
+  finally { btn.disabled = false; }
+}
+
+$('#login-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const id = $('#login-id').value.trim().toLowerCase();
+  const pw = $('#login-pw').value;
+  if (!ID_RE.test(id) || !pw) { $('#auth-error').textContent = '아이디와 비밀번호를 입력해주세요.'; return; }
+  authGuard(e.currentTarget, () => signInWithEmailAndPassword(auth, idToEmail(id), pw));
+});
+
+$('#signup-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const name = $('#su-name').value.replace(/\s+/g, ' ').trim().slice(0, 20);
+  const nick = cleanName($('#su-nick').value);
+  const id = $('#su-id').value.trim().toLowerCase();
+  const pw = $('#su-pw').value;
+  const err = (m) => { $('#auth-error').textContent = m; };
+  if (!name) return err('이름을 입력해주세요.');
+  if (!nick) return err('닉네임을 입력해주세요.');
+  if (!ID_RE.test(id)) return err('아이디는 영어 소문자, 숫자, _ 로 4~16자예요.');
+  if (pw.length < 6) return err('비밀번호는 6자 이상이어야 해요.');
+  if (pw !== $('#su-pw2').value) return err('비밀번호 확인이 맞지 않아요.');
+  authGuard(e.currentTarget, async () => {
+    signingUp = true;
+    const cred = await createUserWithEmailAndPassword(auth, idToEmail(id), pw);
+    const uid = cred.user.uid;
+    try {
+      await update(ref(db), {
+        [`ids/${id}`]: uid,
+        [`users/${uid}`]: {
+          id, nick, approved: false, points: 0, createdAt: serverTimestamp(),
+          stats: { games: 0, win1: 0, win2: 0, win3: 0, daily1: 0 },
+        },
+        [`private/${uid}`]: { name },
+      });
+    } catch (dbErr) {
+      // 데이터 저장에 실패하면 만든 로그인 계정도 지워서 다시 가입할 수 있게 함
+      await cred.user.delete().catch(() => {});
+      throw dbErr;
+    } finally {
+      signingUp = false;
+    }
+    watchProfile(uid);
+  });
+});
+let signingUp = false;
+
+$$('.btn-logout').forEach((b) => (b.onclick = async () => {
+  if (room) return;
+  await signOut(auth);
+}));
+
+function watchProfile(uid) {
+  profileUnsubs.forEach((u) => u());
+  profileUnsubs = [
+    onValue(ref(db, `users/${uid}`), (s) => {
+      const prev = profile;
+      profile = s.val();
+      profileLoaded = true;
+      if (prev && profile) notifyGiftIn(prev, profile);
+      showHome();
+    }, (e) => { console.warn('[계정]', e.message); }),
+    onValue(ref(db, `admins/${uid}`), (s) => { isAdmin = s.val() === true; renderHeaderUser(); }, () => {}),
+  ];
+}
+
+onAuthStateChanged(auth, (user) => {
+  authUser = user;
+  authReady = true;
+  profileUnsubs.forEach((u) => u());
+  profileUnsubs = [];
+  profile = null;
+  profileLoaded = false;
+  isAdmin = false;
+  if (!user) {
+    playerId = null;
+    if (room) leaveLocal();
+    unwatchLobbies();
+    unwatchDaily();
+    showHome();
+    return;
+  }
+  playerId = user.uid;
+  if (!signingUp) watchProfile(user.uid);
+});
+
+function renderHeaderUser() {
+  const on = !!(profile && profile.approved);
+  $('#hdr-user').classList.toggle('hidden', !on);
+  if (on) $('#hdr-user').innerHTML = `${esc(profile.nick)} · <b>${(profile.points || 0).toLocaleString()}P</b>`;
+  $('#hdr-admin').classList.toggle('hidden', !isAdmin);
+}
+
+// 로그인 상태에 맞는 첫 화면 (방에 들어가 있지 않을 때)
+let rejoinTried = false;
+function showHome() {
+  renderHeaderUser();
+  if (room) return;
+  if (!authReady) return show('loading');
+  if (!authUser) return show('auth');
+  if (!profileLoaded) return show('loading');
+  if (!profile) {
+    if (signingUp) return show('loading');
+    // 가입 정보가 없음 (거절되었거나 지워짐)
+    show('auth');
+    $('#auth-error').textContent = '가입 정보가 없어요. 관리자가 거절했거나 삭제했을 수 있어요.';
+    return;
+  }
+  if (!profile.approved) {
+    $('#pending-who').textContent = `${profile.nick} (@${profile.id})`;
+    return show('pending');
+  }
+  show('home');
+  renderProfile();
+  watchLobbies();
+  watchDaily();
+  payDailyChampions();
+  // 새로고침했으면 같은 방으로 자동 복귀
+  if (!rejoinTried) {
+    rejoinTried = true;
+    const savedCode = store.get('nr.room', ss);
+    if (savedCode) {
+      joinRoom(savedCode, profile.nick).catch(() => {
+        store.del('nr.room', ss);
+        toast('이전 방에 다시 들어가지 못했어요.', 'warning');
+      });
+    }
+  }
+}
+
+const AVATAR_BG = (uid) => AVATAR_COLORS[hashOf(uid, 7) % AVATAR_COLORS.length];
+function renderProfile() {
+  if (!profile) return;
+  const st = profile.stats || {};
+  $('#pf-avatar').style.background = AVATAR_BG(authUser.uid);
+  $('#pf-avatar').textContent = [...profile.nick][0] || '?';
+  $('#pf-nick').textContent = profile.nick;
+  $('#pf-id').textContent = `@${profile.id}`;
+  $('#pf-points').textContent = `${(profile.points || 0).toLocaleString()} 포인트`;
+  const cell = (n, label) => `<div><b>${n || 0}</b><span>${label}</span></div>`;
+  $('#pf-stats').innerHTML = cell(st.games, '게임') + cell(st.win1, '🥇 1등') + cell(st.win2, '🥈 2등') + cell(st.win3, '🥉 3등') + cell(st.daily1, '👑 오늘의 챔피언');
+  $('#btn-nick').disabled = (profile.points || 0) < 300;
+}
+
+// ---------- 닉네임 변경 (300포인트) ----------
+$('#btn-nick').onclick = () => {
+  $('#nick-have').textContent = `${(profile.points || 0).toLocaleString()}P`;
+  $('#nick-new').value = '';
+  $('#nick-error').textContent = '';
+  $('#nick-dialog').showModal();
+  $('#nick-new').focus();
+};
+$('#nick-form').addEventListener('submit', async (e) => {
+  if (e.submitter?.value !== 'ok') return;
+  e.preventDefault();
+  const nick = cleanName($('#nick-new').value);
+  if (!nick) { $('#nick-error').textContent = '새 닉네임을 입력해주세요.'; return; }
+  if (nick === profile.nick) { $('#nick-error').textContent = '지금 닉네임과 같아요.'; return; }
+  if ((profile.points || 0) < 300) { $('#nick-error').textContent = '포인트가 부족해요.'; return; }
+  $('#nick-submit').disabled = true;
+  try {
+    await update(ref(db, `users/${authUser.uid}`), { nick, points: profile.points - 300 });
+    $('#nick-dialog').close();
+    toast(`닉네임을 '${nick}'(으)로 바꿨어요. (-300P)`, 'success');
+  } catch (err) {
+    $('#nick-error').textContent = authMessage(err);
+  } finally {
+    $('#nick-submit').disabled = false;
+  }
+});
+
+// ---------- 포인트 선물 ----------
+$('#btn-gift').onclick = () => {
+  $('#gift-have').textContent = `${(profile.points || 0).toLocaleString()}P`;
+  $('#gift-to').value = '';
+  $('#gift-amt').value = '';
+  $('#gift-error').textContent = '';
+  $('#gift-dialog').showModal();
+  $('#gift-to').focus();
+};
+$('#gift-form').addEventListener('submit', async (e) => {
+  if (e.submitter?.value !== 'ok') return;
+  e.preventDefault();
+  const err = (m) => { $('#gift-error').textContent = m; };
+  const toId = $('#gift-to').value.trim().toLowerCase();
+  const amt = Number($('#gift-amt').value);
+  if (!ID_RE.test(toId)) return err('받는 사람 아이디를 확인해주세요.');
+  if (toId === profile.id) return err('나에게는 선물할 수 없어요.');
+  if (!Number.isInteger(amt) || amt < 1) return err('1 이상의 정수로 적어주세요.');
+  $('#gift-submit').disabled = true;
+  try {
+    const toUid = (await get(ref(db, `ids/${toId}`))).val();
+    if (!toUid) return err('그런 아이디가 없어요.');
+    const [meSnap, toSnap] = await Promise.all([get(ref(db, `users/${authUser.uid}`)), get(ref(db, `users/${toUid}`))]);
+    const mine = meSnap.val();
+    const them = toSnap.val();
+    if (!them) return err('그런 회원이 없어요.');
+    if ((mine.points || 0) < amt) return err(`포인트가 부족해요. (지금 ${mine.points || 0}P)`);
+    const key = push(ref(db, 'gifts')).key;
+    await update(ref(db), {
+      [`gifts/${key}`]: { from: authUser.uid, to: toUid, amt, fromNick: mine.nick, toNick: them.nick, at: serverTimestamp() },
+      [`users/${toUid}/points`]: (them.points || 0) + amt,
+      [`users/${toUid}/lastGiftIn`]: { key, from: authUser.uid, amt },
+      [`users/${authUser.uid}/points`]: mine.points - amt,
+    });
+    $('#gift-dialog').close();
+    toast(`${them.nick}님에게 ${amt}P를 선물했어요!`, 'success');
+  } catch (e2) {
+    err(authMessage(e2));
+  } finally {
+    $('#gift-submit').disabled = false;
+  }
+});
+// 선물을 받으면 알림
+function notifyGiftIn(prev, cur) {
+  const g = cur.lastGiftIn;
+  if (!g || g.key === prev.lastGiftIn?.key) return;
+  get(ref(db, `gifts/${g.key}`)).then((s) => {
+    const nick = s.val()?.fromNick || '누군가';
+    toast(`🎁 ${nick}님이 ${g.amt}P를 선물했어요!`, 'success');
+  }).catch(() => toast(`🎁 ${g.amt}P를 선물 받았어요!`, 'success'));
+}
+
+// ---------- 승리 포인트 (1등 100, 2등 50, 3등 30) ----------
+// 로그인한 2명 이상이 한 판에서만. 2등은 3명 이상, 3등은 4명 이상일 때
+const PRIZE = [100, 50, 30];
+let claimedKey = null;
+async function claimRoundRewards() {
+  if (!room || room.state !== 'results' || room.daily || !authUser) return;
+  const key = `${room.code}/${room.round}`;
+  if (claimedKey === key) return;
+  const my = me();
+  if (!my || !my.status || my.status === 'waiting') return;
+  claimedKey = key;
+  const code = room.code;
+  const round = room.round;
+  const participants = room.players.filter((p) => p.status && p.status !== 'waiting').length;
+  const finished = ranking(room).filter((p) => p.status === 'finished');
+  const rank = finished.findIndex((p) => p.id === playerId) + 1;
+  try {
+    const prof = (await get(ref(db, `users/${authUser.uid}`))).val();
+    if (!prof) return;
+    const updates = {};
+    const lastGame = prof.lastGame;
+    if (!(lastGame && lastGame.code === code && lastGame.round === round)) {
+      updates[`users/${authUser.uid}/lastGame`] = { code, round };
+      updates[`users/${authUser.uid}/stats/games`] = (prof.stats?.games || 0) + 1;
+    }
+    const amt = rank >= 1 && rank <= 3 && participants >= rank + 1 ? PRIZE[rank - 1] : 0;
+    if (amt) {
+      const claimed = (await get(ref(db, `claims/${code}/${authUser.uid}`))).val();
+      if (!(typeof claimed === 'number' && claimed >= round)) {
+        updates[`users/${authUser.uid}/points`] = (prof.points || 0) + amt;
+        updates[`users/${authUser.uid}/lastWin`] = { code, round, amt };
+        updates[`users/${authUser.uid}/stats/win${rank}`] = (prof.stats?.[`win${rank}`] || 0) + 1;
+        updates[`claims/${code}/${authUser.uid}`] = round;
+      }
+    }
+    if (!Object.keys(updates).length) return;
+    await update(ref(db), updates);
+    if (updates[`claims/${code}/${authUser.uid}`] != null) {
+      toast(`${rank}등! +${amt} 포인트`, 'success');
+      const sub = $('#end-sub');
+      if ($('#end-dialog').open && !sub.textContent.includes('포인트')) sub.textContent = [sub.textContent, `+${amt} 포인트`].filter(Boolean).join(' · ');
+    }
+  } catch (e) {
+    console.warn('[포인트]', e.message);
+  }
+}
+
+// ---------- 오늘의 챔피언 포인트: 하루가 지나면 그날 1·2·3등에게 지급 ----------
+function prevDateKey(date) {
+  const [y, m, d] = date.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d - 1)).toISOString().slice(0, 10);
+}
+let dailyPayChecked = null;
+async function payDailyChampions() {
+  const date = prevDateKey(todayKey());
+  if (dailyPayChecked === date) return;
+  dailyPayChecked = date;
+  try {
+    if ((await get(ref(db, `dailyPaid/${date}`))).exists()) return;
+    const best = (await get(dailyRef(date, 'best'))).val() || {};
+    // 그날(한국 시간) 안에 세운 기록만 인정
+    const [y, m, d] = date.split('-').map(Number);
+    const dayStart = Date.UTC(y, m - 1, d) - 9 * 3600 * 1000;
+    const dayEnd = dayStart + 24 * 3600 * 1000;
+    const top = Object.entries(best)
+      .filter(([, r]) => typeof r?.ms === 'number' && typeof r.at === 'number' && r.at >= dayStart && r.at < dayEnd)
+      .sort(([, a], [, b]) => a.ms - b.ms || (a.at || 0) - (b.at || 0))
+      .slice(0, 3);
+    const updates = { [`dailyPaid/${date}`]: { by: authUser.uid, at: serverTimestamp() } };
+    for (const [i, [uid]] of top.entries()) {
+      const u = (await get(ref(db, `users/${uid}`))).val();
+      if (!u) continue; // 회원이 아닌 예전 기록은 건너뜀
+      updates[`users/${uid}/points`] = (u.points || 0) + PRIZE[i];
+      updates[`users/${uid}/lastDaily`] = { date, amt: PRIZE[i] };
+      if (i === 0) updates[`users/${uid}/stats/daily1`] = (u.stats?.daily1 || 0) + 1;
+    }
+    await update(ref(db), updates);
+  } catch (e) {
+    // 다른 사람이 먼저 지급했으면 실패해도 괜찮음
+    console.warn('[오늘의 챔피언 지급]', e.message);
+  }
+}
+
+// ---------- 시작 ----------
+show('loading');

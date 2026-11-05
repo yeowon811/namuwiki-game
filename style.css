@@ -497,6 +497,29 @@ code {
 
 .invite-btn { margin-top: 12px; color: var(--color-primary); border-color: var(--color-primary); }
 
+/* ---------- 계정 ---------- */
+.header-right { display: flex; align-items: center; gap: 16px; }
+.hdr-user { font-size: 13px; color: var(--color-text-secondary); white-space: nowrap; }
+.hdr-user b { color: var(--color-warning); }
+.auth-tabs { margin-bottom: 20px; }
+.auth-form .form-item { margin-bottom: 16px; }
+.pending-icon { color: var(--color-primary); background: var(--color-primary-bg); }
+.profile { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.avatar-lg { width: 44px; height: 44px; font-size: 18px; }
+.pf-info { flex: 1; min-width: 0; }
+.pf-nick { font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pf-nick .text-tertiary { font-size: 13px; font-weight: 400; }
+.pf-points { font-size: 14px; font-weight: 600; color: var(--color-warning); font-variant-numeric: tabular-nums; }
+.pf-stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; padding: 10px 0; margin-bottom: 12px;
+  border-top: 1px solid var(--color-border-secondary); border-bottom: 1px solid var(--color-border-secondary); }
+.pf-stats div { text-align: center; }
+.pf-stats b { display: block; font-size: 18px; font-variant-numeric: tabular-nums; }
+.pf-stats span { font-size: 12px; color: var(--color-text-tertiary); }
+.pf-actions { display: flex; gap: 8px; margin-bottom: 12px; }
+.pf-actions .btn { flex: 1; }
+.pf-actions .tag { margin-left: 4px; }
+@media (max-width: 480px) { .hdr-user { display: none; } }
+
 /* ---------- 열려 있는 방 ---------- */
 .open-rooms li { gap: 12px; }
 .open-rooms .info { flex: 1; min-width: 0; display: flex; flex-direction: column; }

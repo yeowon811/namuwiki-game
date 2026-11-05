@@ -2,10 +2,92 @@
   "rules": {
     ".read": false,
     ".write": false,
+    "admins": {
+      ".read": "auth != null"
+    },
+    "ids": {
+      ".read": "auth != null",
+      "$id": {
+        ".write": "auth != null && ((!data.exists() && newData.val() === auth.uid) || root.child('admins').child(auth.uid).val() === true)",
+        ".validate": "$id.matches(/^[a-z0-9_]{4,16}$/)"
+      }
+    },
+    "private": {
+      "$uid": {
+        ".read": "auth != null && (auth.uid === $uid || root.child('admins').child(auth.uid).val() === true)",
+        ".write": "auth != null && ((auth.uid === $uid && !data.exists()) || root.child('admins').child(auth.uid).val() === true)",
+        "name": {
+          ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 20"
+        }
+      }
+    },
+    "users": {
+      ".read": "auth != null",
+      "$uid": {
+        ".write": "auth != null && ((auth.uid === $uid && !data.exists() && newData.child('approved').val() === false && newData.child('points').val() === 0) || root.child('admins').child(auth.uid).val() === true)",
+        "id": {
+          ".validate": "newData.isString() && newData.parent().parent().parent().child('ids').child(newData.val()).val() === $uid"
+        },
+        "approved": {
+          ".validate": "newData.isBoolean()"
+        },
+        "nick": {
+          ".write": "auth != null && auth.uid === $uid && data.exists() && data.parent().child('approved').val() === true",
+          ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 16 && (!data.exists() || newData.val() === data.val() || root.child('admins').child(auth.uid).val() === true || newData.parent().child('points').val() === data.parent().child('points').val() - 300)"
+        },
+        "points": {
+          ".write": "auth != null && root.child('users').child(auth.uid).child('approved').val() === true",
+          ".validate": "newData.isNumber() && newData.val() >= 0 && ((!data.exists() && newData.val() === 0) || newData.val() === data.val() || (auth.uid === $uid && newData.val() < data.val()) || (auth.uid === $uid && (newData.parent().child('lastWin/code').val() !== data.parent().child('lastWin/code').val() || newData.parent().child('lastWin/round').val() !== data.parent().child('lastWin/round').val()) && newData.val() === data.val() + newData.parent().child('lastWin/amt').val()) || (newData.parent().child('lastGiftIn/key').val() !== data.parent().child('lastGiftIn/key').val() && auth.uid === newData.parent().child('lastGiftIn/from').val() && newData.val() === data.val() + newData.parent().child('lastGiftIn/amt').val()) || (newData.parent().child('lastDaily/date').val() !== data.parent().child('lastDaily/date').val() && newData.val() === data.val() + newData.parent().child('lastDaily/amt').val()) || root.child('admins').child(auth.uid).val() === true)"
+        },
+        "lastWin": {
+          ".write": "auth != null && auth.uid === $uid",
+          ".validate": "newData.hasChildren(['code', 'round', 'amt']) && (newData.child('amt').val() === 100 || newData.child('amt').val() === 50 || newData.child('amt').val() === 30) && root.child('rooms').child(newData.child('code').val()).child('round').val() === newData.child('round').val() && root.child('rooms').child(newData.child('code').val()).child('state').val() === 'results' && root.child('rooms').child(newData.child('code').val()).child('players').child($uid).child('status').val() === 'finished' && (!root.child('claims').child(newData.child('code').val()).child($uid).exists() || root.child('claims').child(newData.child('code').val()).child($uid).val() < newData.child('round').val()) && newData.parent().parent().parent().child('claims').child(newData.child('code').val()).child($uid).val() === newData.child('round').val()"
+        },
+        "lastGiftIn": {
+          ".write": "auth != null && root.child('users').child(auth.uid).child('approved').val() === true",
+          ".validate": "newData.hasChildren(['key', 'from', 'amt']) && newData.child('from').val() === auth.uid && auth.uid !== $uid && newData.child('amt').isNumber() && newData.child('amt').val() >= 1 && newData.parent().parent().child(auth.uid).child('points').val() === root.child('users').child(auth.uid).child('points').val() - newData.child('amt').val() && !root.child('gifts').child(newData.child('key').val()).exists() && newData.parent().parent().parent().child('gifts').child(newData.child('key').val()).child('amt').val() === newData.child('amt').val() && newData.parent().parent().parent().child('gifts').child(newData.child('key').val()).child('to').val() === $uid"
+        },
+        "lastDaily": {
+          ".write": "auth != null && root.child('users').child(auth.uid).child('approved').val() === true",
+          ".validate": "newData.hasChildren(['date', 'amt']) && (newData.child('amt').val() === 100 || newData.child('amt').val() === 50 || newData.child('amt').val() === 30) && root.child('daily').child(newData.child('date').val()).child('best').child($uid).exists() && !root.child('dailyPaid').child(newData.child('date').val()).exists() && newData.parent().parent().parent().child('dailyPaid').child(newData.child('date').val()).exists()"
+        },
+        "lastGame": {
+          ".write": "auth != null && auth.uid === $uid"
+        },
+        "stats": {
+          "$k": {
+            ".write": "auth != null && (auth.uid === $uid || (root.child('users').child(auth.uid).child('approved').val() === true && !root.child('dailyPaid').child(newData.parent().parent().child('lastDaily/date').val()).exists() && newData.parent().parent().parent().parent().child('dailyPaid').child(newData.parent().parent().child('lastDaily/date').val()).exists()))",
+            ".validate": "newData.isNumber() && (!data.exists() || newData.val() >= data.val())"
+          }
+        }
+      }
+    },
+    "claims": {
+      ".read": "auth != null",
+      "$code": {
+        "$uid": {
+          ".write": "auth != null && auth.uid === $uid",
+          ".validate": "newData.isNumber()"
+        }
+      }
+    },
+    "gifts": {
+      "$key": {
+        ".read": "auth != null && (data.child('from').val() === auth.uid || data.child('to').val() === auth.uid || root.child('admins').child(auth.uid).val() === true)",
+        ".write": "auth != null && root.child('users').child(auth.uid).child('approved').val() === true && !data.exists() && newData.child('from').val() === auth.uid",
+        ".validate": "newData.hasChildren(['from', 'to', 'amt'])"
+      }
+    },
+    "dailyPaid": {
+      ".read": "auth != null",
+      "$date": {
+        ".write": "auth != null && root.child('users').child(auth.uid).child('approved').val() === true && !data.exists()"
+      }
+    },
     "rooms": {
       "$code": {
-        ".read": true,
-        ".write": true,
+        ".read": "auth != null",
+        ".write": "auth != null && root.child('users').child(auth.uid).child('approved').val() === true",
         ".validate": "$code.matches(/^[A-Z0-9]{4}$/)",
         "mode": {
           ".validate": "newData.val() === 'time' || newData.val() === 'clicks' || newData.val() === 'relay'"
@@ -40,9 +122,9 @@
       }
     },
     "lobbies": {
-      ".read": true,
+      ".read": "auth != null",
       "$code": {
-        ".write": true,
+        ".write": "auth != null && root.child('users').child(auth.uid).child('approved').val() === true",
         ".validate": "$code.matches(/^[A-Z0-9]{4}$/)",
         "name": {
           ".validate": "newData.isString() && newData.val().length <= 16"
@@ -53,22 +135,25 @@
       }
     },
     "daily": {
-      ".read": true,
+      ".read": "auth != null",
       "$date": {
         ".validate": "$date.matches(/^20[0-9][0-9]-[0-9][0-9]-[0-9][0-9]$/)",
         "puzzle": {
-          ".write": "!data.exists()",
+          ".write": "auth != null && root.child('users').child(auth.uid).child('approved').val() === true && !data.exists()",
           ".validate": "newData.hasChildren(['start', 'targets'])"
         },
         "best": {
           "$pid": {
-            ".write": true,
+            ".write": "auth != null && root.child('users').child(auth.uid).child('approved').val() === true && (auth.uid === $pid || root.child('admins').child(auth.uid).val() === true)",
             ".validate": "newData.hasChildren(['name', 'ms'])",
             "name": {
               ".validate": "newData.isString() && newData.val().length <= 16"
             },
             "ms": {
               ".validate": "newData.isNumber() && newData.val() > 0"
+            },
+            "at": {
+              ".validate": "newData.val() === now"
             }
           }
         }

@@ -6,7 +6,7 @@
   <title>나무위키 레이스</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" />
-  <link rel="stylesheet" href="style.css?v=16" />
+  <link rel="stylesheet" href="style.css?v=17" />
 </head>
 <body>
   <!-- 아이콘 모음 (Ant Design의 Outlined 스타일을 따라 그린 선 아이콘) -->
@@ -41,13 +41,89 @@
   <header class="app-header">
     <div class="app-header-inner">
       <div class="brand"><span class="brand-mark"><svg class="ic"><use href="#i-flag"/></svg></span>나무위키 레이스</div>
-      <a class="header-link" href="https://github.com/yeowon811/namuwiki-game" target="_blank" rel="noopener">GitHub</a>
+      <div class="header-right">
+        <span id="hdr-user" class="hdr-user hidden"></span>
+        <a id="hdr-admin" class="header-link hidden" href="admin.html">관리자</a>
+        <a class="header-link" href="https://github.com/yeowon811/namuwiki-game" target="_blank" rel="noopener">GitHub</a>
+      </div>
     </div>
   </header>
 
   <main id="app">
+    <!-- 불러오는 중 -->
+    <section id="screen-loading" class="screen">
+      <p class="text-tertiary center" style="margin-top:80px">불러오는 중…</p>
+    </section>
+
+    <!-- 로그인 / 회원가입 -->
+    <section id="screen-auth" class="screen hidden">
+      <div class="page-title">
+        <h1>나무위키 레이스</h1>
+        <p class="text-secondary">링크만 타고 목표 문서까지! 로그인하고 친구들과 겨뤄 보세요.</p>
+      </div>
+      <div class="card">
+        <div class="card-body">
+          <div class="segmented auth-tabs" id="auth-tabs">
+            <button type="button" data-tab="login" class="active">로그인</button>
+            <button type="button" data-tab="signup">회원가입</button>
+          </div>
+          <form id="login-form" class="auth-form" autocomplete="on">
+            <div class="form-item">
+              <label for="login-id" class="form-label">아이디</label>
+              <input id="login-id" class="input input-lg" maxlength="16" autocomplete="username" autocapitalize="off" spellcheck="false" />
+            </div>
+            <div class="form-item">
+              <label for="login-pw" class="form-label">비밀번호</label>
+              <input id="login-pw" type="password" class="input input-lg" autocomplete="current-password" />
+            </div>
+            <button class="btn btn-primary btn-lg btn-block" type="submit">로그인</button>
+          </form>
+          <form id="signup-form" class="auth-form hidden" autocomplete="on">
+            <div class="form-item">
+              <label for="su-name" class="form-label">이름</label>
+              <input id="su-name" class="input input-lg" maxlength="20" autocomplete="name" />
+              <p class="form-extra">본인과 관리자만 볼 수 있어요.</p>
+            </div>
+            <div class="form-item">
+              <label for="su-nick" class="form-label">닉네임</label>
+              <input id="su-nick" class="input input-lg" maxlength="16" autocomplete="nickname" />
+              <p class="form-extra">게임에서 보이는 이름이에요. 나중에 바꾸려면 300포인트가 필요해요.</p>
+            </div>
+            <div class="form-item">
+              <label for="su-id" class="form-label">아이디</label>
+              <input id="su-id" class="input input-lg" maxlength="16" autocomplete="username" autocapitalize="off" spellcheck="false" />
+              <p class="form-extra">영어 소문자, 숫자, _ 로 4~16자</p>
+            </div>
+            <div class="form-item">
+              <label for="su-pw" class="form-label">비밀번호</label>
+              <input id="su-pw" type="password" class="input input-lg" autocomplete="new-password" />
+              <p class="form-extra">6자 이상</p>
+            </div>
+            <div class="form-item">
+              <label for="su-pw2" class="form-label">비밀번호 확인</label>
+              <input id="su-pw2" type="password" class="input input-lg" autocomplete="new-password" />
+            </div>
+            <button class="btn btn-primary btn-lg btn-block" type="submit">가입 신청</button>
+            <p class="text-tertiary small center" style="margin-top:8px">관리자가 승인하면 이용할 수 있어요.</p>
+          </form>
+          <p id="auth-error" class="form-error"></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 승인 대기 -->
+    <section id="screen-pending" class="screen hidden">
+      <div class="result">
+        <span class="result-icon pending-icon"><svg class="ic"><use href="#i-clock"/></svg></span>
+        <h1 class="result-title">승인 대기 중</h1>
+        <p class="result-sub" id="pending-who"></p>
+        <p class="text-secondary">가입 신청이 접수됐어요. 관리자가 승인하면 이 화면이 자동으로 바뀌어요.</p>
+      </div>
+      <button class="btn btn-text btn-logout"><svg class="ic"><use href="#i-logout"/></svg>로그아웃</button>
+    </section>
+
     <!-- 홈 -->
-    <section id="screen-home" class="screen">
+    <section id="screen-home" class="screen hidden">
       <div class="page-title">
         <h1>링크만 타고 목표 문서까지</h1>
         <p class="text-secondary">모두 같은 시작 문서에서 출발해요. 가장 빨리, 또는 가장 적은 클릭으로 도착하면 승리!</p>
@@ -56,9 +132,18 @@
       <div class="card">
         <div class="card-head"><span class="card-title">시작하기</span></div>
         <div class="card-body">
-          <div class="form-item">
-            <label for="name" class="form-label">닉네임</label>
-            <input id="name" class="input input-lg" maxlength="16" placeholder="닉네임을 입력하세요" autocomplete="nickname" />
+          <div class="profile">
+            <span id="pf-avatar" class="avatar avatar-lg"></span>
+            <div class="pf-info">
+              <div class="pf-nick"><span id="pf-nick"></span> <span id="pf-id" class="text-tertiary"></span></div>
+              <div class="pf-points"><span id="pf-points"></span></div>
+            </div>
+            <button class="btn btn-text btn-sm btn-logout" type="button"><svg class="ic"><use href="#i-logout"/></svg>로그아웃</button>
+          </div>
+          <div class="pf-stats" id="pf-stats"></div>
+          <div class="pf-actions">
+            <button id="btn-nick" class="btn" type="button">닉네임 변경 <span class="tag">300P</span></button>
+            <button id="btn-gift" class="btn" type="button">🎁 포인트 선물</button>
           </div>
           <button id="btn-create" class="btn btn-primary btn-lg btn-block">방 만들기</button>
           <!-- 초대 링크로 들어왔을 때만 보임 -->
@@ -345,9 +430,44 @@
     </form>
   </dialog>
 
+  <!-- 닉네임 변경 -->
+  <dialog id="nick-dialog" class="modal">
+    <form method="dialog" id="nick-form">
+      <div class="modal-title">닉네임 변경</div>
+      <p class="text-secondary">300포인트를 써서 닉네임을 바꿔요. 지금 <b id="nick-have"></b> 있어요.</p>
+      <input id="nick-new" class="input input-lg" maxlength="16" placeholder="새 닉네임" />
+      <p id="nick-error" class="form-error"></p>
+      <div class="modal-footer">
+        <button value="cancel" class="btn" formnovalidate>취소</button>
+        <button value="ok" id="nick-submit" class="btn btn-primary">300P 쓰고 변경</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- 포인트 선물 -->
+  <dialog id="gift-dialog" class="modal">
+    <form method="dialog" id="gift-form">
+      <div class="modal-title">🎁 포인트 선물</div>
+      <p class="text-secondary">받을 사람의 아이디와 보낼 포인트를 적어주세요. 지금 <b id="gift-have"></b> 있어요.</p>
+      <div class="form-item">
+        <label for="gift-to" class="form-label">받는 사람 아이디</label>
+        <input id="gift-to" class="input" maxlength="16" autocapitalize="off" spellcheck="false" />
+      </div>
+      <div class="form-item form-item-last">
+        <label for="gift-amt" class="form-label">포인트</label>
+        <input id="gift-amt" class="input" type="number" min="1" step="1" inputmode="numeric" />
+      </div>
+      <p id="gift-error" class="form-error"></p>
+      <div class="modal-footer">
+        <button value="cancel" class="btn" formnovalidate>취소</button>
+        <button value="ok" id="gift-submit" class="btn btn-primary">선물하기</button>
+      </div>
+    </form>
+  </dialog>
+
   <div id="toast" class="message" role="status"></div>
 
   <!-- 코드를 바꾸면 ?v= 숫자를 올려서 브라우저 캐시에 남은 옛 파일을 쓰지 않게 함 -->
-  <script type="module" src="app.js?v=16"></script>
+  <script type="module" src="app.js?v=17"></script>
 </body>
 </html>
