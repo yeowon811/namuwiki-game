@@ -1,7 +1,7 @@
 // 관리자 페이지: 회원 목록, 포인트 조정, 이용 정지, 삭제 (예전 방식 가입의 승인/거절)
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
-import { getDatabase, ref, get, update, onValue } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
+import { getDatabase, ref, get, set, update, onValue, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
 import { firebaseConfig } from './firebase-config.js';
 
 const $ = (s) => document.querySelector(s);
@@ -33,6 +33,7 @@ onAuthStateChanged(auth, async (user) => {
   $('#hdr-user').textContent = me ? `${me.nick} (@${me.id})` : '';
   $('#adm-gate').classList.add('hidden');
   $('#adm-main').classList.remove('hidden');
+  loadRoomStats();
   unsub = onValue(ref(db, 'users'), async (s) => {
     users = s.val() || {};
     // 실명은 private에 따로 있어서 한 명씩 읽음
@@ -75,6 +76,59 @@ function render() {
     : '<tr><td colspan="8" class="adm-empty">회원이 없어요.</td></tr>';
 }
 $('#member-search').addEventListener('input', render);
+
+// ---------- 데이터 정리 ----------
+const STALE_ROOM_MS = 2 * 3600 * 1000;
+let clockOffset = 0;
+onValue(ref(db, '.info/serverTimeOffset'), (s) => { clockOffset = s.val() || 0; });
+const now = () => Date.now() + clockOffset;
+
+// 지울 방 고르기: 활동 기록이 2시간 넘은 방 + 활동 기록이 없는 예전 방 중 접속자가 없는 방
+async function findStale() {
+  const [roomsSnap, idxSnap, lobSnap] = await Promise.all([get(ref(db, 'rooms')), get(ref(db, 'roomIndex')), get(ref(db, 'lobbies'))]);
+  const rooms = roomsSnap.val() || {};
+  const idx = idxSnap.val() || {};
+  const lob = lobSnap.val() || {};
+  const cutoff = now() - STALE_ROOM_MS;
+  const stale = new Set();
+  for (const [code, r] of Object.entries(rooms)) {
+    const last = idx[code]?.lastActive;
+    if (typeof last === 'number') { if (last <= cutoff) stale.add(code); continue; }
+    const anyoneOnline = Object.values(r?.players || {}).some((p) => p?.online);
+    if (!anyoneOnline) stale.add(code);
+  }
+  for (const code of Object.keys(idx)) if (!rooms[code]) stale.add(code); // 방은 없고 기록만 남음
+  const staleLobbies = Object.entries(lob).filter(([code, l]) => stale.has(code) || !(typeof l?.updatedAt === 'number' && l.updatedAt > cutoff)).map(([c]) => c);
+  return { total: Object.keys(rooms).length, stale: [...stale], staleLobbies };
+}
+async function loadRoomStats() {
+  try {
+    const { total, stale } = await findStale();
+    $('#cleanup-stats').textContent = `방 ${total}개 중 정리할 방 ${stale.filter((c) => c).length}개`;
+  } catch (e) {
+    $('#cleanup-stats').textContent = `방 정보를 불러오지 못했어요. 데이터베이스 규칙을 다시 게시했는지 확인해 주세요. (${e.message})`;
+  }
+}
+$('#btn-cleanup').onclick = async (e) => {
+  const b = e.currentTarget;
+  b.disabled = true;
+  try {
+    const { stale, staleLobbies } = await findStale();
+    if (!stale.length && !staleLobbies.length) { toast('정리할 방이 없어요.'); return; }
+    if (!confirm(`오래된 방 ${stale.length}개를 지울까요?`)) return;
+    const updates = {};
+    for (const code of stale) Object.assign(updates, { [`rooms/${code}`]: null, [`roomIndex/${code}`]: null, [`lobbies/${code}`]: null });
+    for (const code of staleLobbies) updates[`lobbies/${code}`] = null;
+    await update(ref(db), updates);
+    await set(ref(db, 'maint/lastCleanup'), serverTimestamp()).catch(() => {});
+    toast(`오래된 방 ${stale.length}개를 지웠어요.`);
+  } catch (err) {
+    toast(`정리하지 못했어요: ${err.message}`);
+  } finally {
+    b.disabled = false;
+    loadRoomStats();
+  }
+};
 
 document.addEventListener('click', async (e) => {
   const b = e.target.closest('[data-act]');

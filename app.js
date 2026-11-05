@@ -250,13 +250,22 @@ function makeCode() {
 
 function setHomeError(msg) { $('#home-error').textContent = msg || ''; }
 
+// 방 데이터 + 정리용 활동 기록(roomIndex)을 함께 만듦. rid는 방마다 다른 고유 번호
+// (같은 4자리 코드가 나중에 다시 뽑혀도 예전 방과 구분하기 위해)
+function createRoomData(code, data) {
+  return update(ref(db), {
+    [`rooms/${code}`]: { ...data, rid: newId() },
+    [`roomIndex/${code}`]: { lastActive: serverTimestamp() },
+  });
+}
+
 async function createRoom(name) {
   let code;
   for (let i = 0; i < 10; i++) {
     code = makeCode();
     if (!(await get(roomRef(code))).exists()) break;
   }
-  await set(roomRef(code), {
+  await createRoomData(code, {
     hostId: playerId,
     mode: 'time',
     timeLimitMin: 0,
@@ -412,8 +421,7 @@ async function leaveRoom() {
   if (!code) return;
   const others = (r?.players || []).filter((p) => p.id !== playerId);
   if (others.length === 0) {
-    await remove(roomRef(code));
-    remove(ref(db, `lobbies/${code}`)).catch(() => {});
+    await update(ref(db), { [`rooms/${code}`]: null, [`lobbies/${code}`]: null, [`roomIndex/${code}`]: null });
     return;
   }
   const updates = { [`players/${playerId}`]: null };
@@ -515,9 +523,15 @@ function publishLobby() {
   set(lobbyRef, { ...summary, updatedAt: serverTimestamp() }).catch((e) => console.warn('[방 목록]', e.message));
 }
 
+let roomBeat = { code: null, at: 0 };
 function maintain() {
   if (!room) return;
   publishLobby();
+  // 방장이 1분마다 '마지막 활동 시각' 갱신 → 2시간 넘게 활동 없는 방은 자동 정리
+  if (isHost() && (roomBeat.code !== room.code || Date.now() - roomBeat.at > 60 * 1000)) {
+    roomBeat = { code: room.code, at: Date.now() };
+    set(ref(db, `roomIndex/${room.code}`), { lastActive: serverTimestamp() }).catch(() => {});
+  }
   if (isHost() && room.ghosts?.length) {
     const fix = {};
     for (const id of room.ghosts) fix[`players/${id}`] = null;
@@ -678,7 +692,7 @@ async function startDaily(name) {
     code = makeCode();
     if (!(await get(roomRef(code))).exists()) break;
   }
-  await set(roomRef(code), {
+  await createRoomData(code, {
     hostId: playerId,
     mode: 'relay',
     legs: 2,
@@ -1418,6 +1432,7 @@ function showHome() {
   watchLobbies();
   watchDaily();
   payDailyChampions();
+  cleanupStaleRooms();
   // 새로고침했으면 같은 방으로 자동 복귀
   if (!rejoinTried) {
     rejoinTried = true;
@@ -1500,17 +1515,18 @@ async function claimRoundRewards() {
     }
     const amt = rank >= 1 ? prizesFor(participants)[rank - 1] || 0 : 0;
     if (amt) {
-      const claimed = (await get(ref(db, `claims/${code}/${authUser.uid}`))).val();
+      const rid = room.rid || code; // 예전 방은 고유 번호가 없어서 코드로
+      const claimed = (await get(ref(db, `claims/${rid}/${authUser.uid}`))).val();
       if (!(typeof claimed === 'number' && claimed >= round)) {
         updates[`users/${authUser.uid}/points`] = (prof.points || 0) + amt;
-        updates[`users/${authUser.uid}/lastWin`] = { code, round, amt };
+        updates[`users/${authUser.uid}/lastWin`] = { code, rid, round, amt };
         updates[`users/${authUser.uid}/stats/win${rank}`] = (prof.stats?.[`win${rank}`] || 0) + 1;
-        updates[`claims/${code}/${authUser.uid}`] = round;
+        updates[`claims/${rid}/${authUser.uid}`] = round;
       }
     }
     if (!Object.keys(updates).length) return;
     await update(ref(db), updates);
-    if (updates[`claims/${code}/${authUser.uid}`] != null) {
+    if (Object.keys(updates).some((k) => k.startsWith('claims/'))) {
       toast(`${rank}등! +${amt} 포인트`, 'success');
       const sub = $('#end-sub');
       if ($('#end-dialog').open && !sub.textContent.includes('포인트')) sub.textContent = [sub.textContent, `+${amt} 포인트`].filter(Boolean).join(' · ');
@@ -1553,6 +1569,46 @@ async function payDailyChampions() {
   } catch (e) {
     // 다른 사람이 먼저 지급했으면 실패해도 괜찮음
     console.warn('[오늘의 챔피언 지급]', e.message);
+  }
+}
+
+// ---------- 데이터 정리: 오래 활동이 없는 방 지우기 ----------
+// 시작 화면에 들어온 사람의 브라우저가 대신 정리 (모두 합쳐 30분에 한 번만)
+const STALE_ROOM_MS = 2 * 3600 * 1000;
+const CLEANUP_EVERY_MS = 30 * 60 * 1000;
+let cleanupTried = false;
+async function cleanupStaleRooms() {
+  if (cleanupTried) return;
+  cleanupTried = true;
+  try {
+    // 30분 안에 누가 이미 정리했으면 건너뜀 (동시에 여러 명이 정리하지 않도록 트랜잭션으로 차례 정하기)
+    let mine = false;
+    await runTransaction(ref(db, 'maint/lastCleanup'), (cur) => {
+      if (typeof cur === 'number' && now() - cur < CLEANUP_EVERY_MS) { mine = false; return undefined; }
+      mine = true;
+      return serverTimestamp();
+    });
+    if (!mine) return;
+    const [idx, lob] = await Promise.all([get(ref(db, 'roomIndex')), get(ref(db, 'lobbies'))]);
+    const cutoff = now() - STALE_ROOM_MS;
+    const updates = {};
+    for (const [code, v] of Object.entries(idx.val() || {})) {
+      if (!(typeof v?.lastActive === 'number' && v.lastActive > cutoff)) {
+        updates[`rooms/${code}`] = null;
+        updates[`lobbies/${code}`] = null;
+        updates[`roomIndex/${code}`] = null;
+      }
+    }
+    // 목록에만 남은 오래된 항목도 정리
+    for (const [code, v] of Object.entries(lob.val() || {})) {
+      if (!(typeof v?.updatedAt === 'number' && v.updatedAt > cutoff)) updates[`lobbies/${code}`] = null;
+    }
+    if (Object.keys(updates).length) {
+      await update(ref(db), updates);
+      console.info(`[데이터 정리] 오래된 방 ${Object.keys(updates).filter((k) => k.startsWith('rooms/')).length}개를 지웠어요.`);
+    }
+  } catch (e) {
+    console.warn('[데이터 정리]', e.message);
   }
 }
 
