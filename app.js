@@ -848,6 +848,23 @@ $('#btn-lobby').onclick = () => {
   update(roomRef(room.code), updates);
 };
 
+// 게임이 시작되면 시작 문서를 새 탭에서 자동으로 열기 (판마다 한 번, 새로고침해도 다시 열지 않음)
+// - 확장 프로그램이 있으면 확장 프로그램이 레이스 탭을 열어서 팝업 차단에 걸리지 않음
+// - 없으면 브라우저가 팝업을 막을 수 있어서, 막히면 버튼을 누르라고 안내
+function autoOpenStart() {
+  const key = raceKey();
+  if (!key || store.get('nr.autoOpened', ss) === key) return;
+  store.set('nr.autoOpened', key, ss);
+  if (ext.ready) {
+    if (extRaceIsCurrent() && ext.race.hasTab) return; // 이미 레이스 탭이 있음
+    syncExt();
+    toExt('OPEN_START');
+    return;
+  }
+  const w = window.open(namuUrl(room.start), '_blank');
+  if (!w) toast('브라우저가 새 창을 막았어요. 아래 "나무위키에서 열기"를 눌러주세요.', 'warning');
+}
+
 // 확장 프로그램이 있으면 확장 프로그램이 '레이스 탭'을 열어서 그 탭의 이동만 기록
 $('#play-start-link').addEventListener('click', (e) => {
   if (!ext.ready) return;
@@ -1153,6 +1170,7 @@ function render() {
     $('#auto-hint').classList.toggle('hidden', !ext.ready);
     $('#ext-missing').classList.toggle('hidden', ext.ready || status !== 'playing');
     $('#play-start-link').innerHTML = (ext.ready && extRaceIsCurrent() && ext.race.steps.length ? '나무위키 탭으로 돌아가기' : '나무위키에서 열기') + icon('export');
+    if (status === 'playing') autoOpenStart();
     renderProgress();
     $('#play-spectator').classList.toggle('hidden', status !== 'waiting');
     const done = $('#play-done');
