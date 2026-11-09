@@ -328,6 +328,7 @@
         <ul id="lobby-players" class="list"></ul>
       </div>
 
+      <div class="alert alert-warning idle-warn hidden"><svg class="ic alert-icon"><use href="#i-warn"/></svg><span></span></div>
       <button id="btn-start" class="btn btn-primary btn-lg btn-block"><svg class="ic"><use href="#i-play"/></svg>게임 시작</button>
       <p id="wait-host" class="text-tertiary center">방장이 게임을 시작하길 기다리는 중…</p>
       <button class="btn btn-text btn-leave"><svg class="ic"><use href="#i-logout"/></svg>방 나가기</button>
@@ -408,6 +409,7 @@
         <span id="res-mode" class="tag tag-blue"></span>
       </div>
       <ol id="res-list" class="results"></ol>
+      <div class="alert alert-warning idle-warn hidden"><svg class="ic alert-icon"><use href="#i-warn"/></svg><span></span></div>
       <div id="res-host" class="stack">
         <button id="btn-again" class="btn btn-primary btn-lg btn-block"><svg class="ic"><use href="#i-redo"/></svg>다음 판 (새 키워드)</button>
         <button id="btn-lobby" class="btn btn-lg btn-block">로비로 (설정 바꾸기)</button>
@@ -465,6 +467,6 @@
   <div id="toast" class="message" role="status"></div>
 
   <!-- 코드를 바꾸면 ?v= 숫자를 올려서 브라우저 캐시에 남은 옛 파일을 쓰지 않게 함 -->
-  <script type="module" src="app.js?v=41"></script>
+  <script type="module" src="app.js?v=42"></script>
 </body>
 </html>

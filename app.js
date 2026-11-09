@@ -346,7 +346,8 @@ function enterRoom(code) {
     if (v?.closed) {
       const byMe = v.hostId === playerId;
       leaveLocal();
-      toast(byMe ? '방을 없앴어요.' : '방장이 방을 없앴어요.', byMe ? 'success' : 'warning');
+      if (v.closed === 'idle') toast(`${IDLE_CLOSE_MIN}분 동안 게임을 시작하지 않아서 방이 닫혔어요.`, 'warning');
+      else toast(byMe ? '방을 없앴어요.' : '방장이 방을 없앴어요.', byMe ? 'success' : 'warning');
       return;
     }
     const kicked = !!v?.kicked?.[playerId];
@@ -544,7 +545,7 @@ for (const sel of ['#lobby-players', '#play-players']) {
 }
 
 function endRound() {
-  if (room?.state === 'playing') update(roomRef(room.code), { state: 'results' });
+  if (room?.state === 'playing') update(roomRef(room.code), { state: 'results', endedAt: serverTimestamp() });
 }
 
 // 누구나 실행해도 결과가 같은(멱등) 정리 작업: 라운드 종료, 방장 넘기기
@@ -574,10 +575,38 @@ function publishLobby() {
   set(lobbyRef, { ...summary, updatedAt: serverTimestamp() }).catch((e) => console.warn('[방 목록]', e.message));
 }
 
+// 게임을 시작하지 않고 30분이 지나면 방을 자동으로 닫음 (방을 만든 뒤, 또는 마지막 판이 끝난 뒤부터)
+const IDLE_CLOSE_MIN = 30;
+const IDLE_WARN_MIN = 5; // 닫히기 몇 분 전부터 안내
+let idleClosing = null;
+const idleSince = (r) => Math.max(r.createdAt || 0, r.startAt || 0, r.endedAt || 0);
+function idleLeftMs() {
+  if (!room || room.state === 'playing') return Infinity;
+  const since = idleSince(room);
+  if (!since) return Infinity;
+  return since + IDLE_CLOSE_MIN * 60000 - now();
+}
+function checkIdle() {
+  const left = idleLeftMs();
+  // 안내: 닫히기 5분 전부터 대기실·결과 화면에
+  const warn = left <= IDLE_WARN_MIN * 60000;
+  const mins = Math.max(1, Math.ceil(left / 60000));
+  $$('.idle-warn').forEach((el) => {
+    el.classList.toggle('hidden', !warn);
+    if (warn) el.querySelector('span').textContent = `${mins}분 안에 게임을 시작하지 않으면 방이 자동으로 닫혀요.`
+      + (isHost() ? ' 게임을 시작하면 다시 30분이 늘어나요.' : ' 방장에게 시작해 달라고 말해 보세요!');
+  });
+  if (left <= 0 && isHost() && idleClosing !== room.code) {
+    idleClosing = room.code;
+    destroyRoom('idle').catch((e) => { console.warn('[자동 닫기]', e); idleClosing = null; });
+  }
+}
+
 let roomBeat = { code: null, at: 0 };
 function maintain() {
   if (!room) return;
   publishLobby();
+  checkIdle();
   // 방장이 1분마다 '마지막 활동 시각' 갱신 → 2시간 넘게 활동 없는 방은 자동 정리
   if (isHost() && (roomBeat.code !== room.code || Date.now() - roomBeat.at > 60 * 1000)) {
     roomBeat = { code: room.code, at: Date.now() };
@@ -867,11 +896,11 @@ $$('.btn-destroy').forEach((b) => (b.onclick = () => {
   if (!isHost()) return;
   if (confirm('방을 없앨까요?\n모든 참가자가 방에서 나가게 되고, 되돌릴 수 없어요.')) destroyRoom().catch((e) => { console.error(e); toast('방을 없애지 못했어요.', 'error'); });
 }));
-async function destroyRoom() {
+async function destroyRoom(reason = 'host') {
   const code = currentCode;
   if (!code || !isHost()) return;
   // 먼저 '없앰' 표시 → 모든 참가자 화면이 방에서 나감, 그다음 방을 지움
-  await update(ref(db), { [`rooms/${code}/closed`]: true, [`lobbies/${code}`]: null });
+  await update(ref(db), { [`rooms/${code}/closed`]: reason === 'idle' ? 'idle' : true, [`lobbies/${code}`]: null });
   // 다른 사람들이 '없앰' 표시를 받을 시간을 잠깐 준 뒤 지움
   await new Promise((r) => setTimeout(r, 1500));
   await update(ref(db), { [`rooms/${code}`]: null, [`roomIndex/${code}`]: null });
