@@ -496,6 +496,7 @@ function leaveLocal() {
 // ---------- 방장 동작 ----------
 function startRound() {
   if (!isHost()) return;
+  if (!room.daily && !allReady()) { toast(`아직 준비하지 않은 사람이 있어요: ${notReady().map((p) => p.name).join(', ')}`, 'warning'); return; }
   const relay = room.mode === 'relay';
   const picked = room.daily?.start ? { ...room.daily, target: room.daily.targets[room.daily.targets.length - 1] }
     : pickKeywords(room.round ? room : null, relay ? (room.legs || 2) : 1);
@@ -523,6 +524,7 @@ function startRound() {
     updates[`players/${p.id}/leg`] = null;
     updates[`players/${p.id}/hints`] = null;
     updates[`players/${p.id}/dq`] = null;
+    updates[`players/${p.id}/ready`] = null; // 새 판이 시작되면 준비가 풀림
     updates[`players/${p.id}/away`] = null;
     updates[`players/${p.id}/returns`] = null;
     updates[`players/${p.id}/legTimes`] = null;
@@ -915,6 +917,62 @@ $('#public-room').onclick = () => isHost() && update(roomRef(room.code), { publi
 $('#winners').onchange = (e) => isHost() && update(roomRef(room.code), { winners: Number(e.target.value) });
 $('#legs').onchange = (e) => isHost() && update(roomRef(room.code), { legs: Number(e.target.value) });
 $('#round-trip').onclick = () => isHost() && update(roomRef(room.code), { roundTrip: !room.roundTrip });
+
+// ---------- 준비(레디) ----------
+// 방장이 아닌 접속 중인 사람이 모두 준비해야 방장이 게임을 시작할 수 있음. 새 판이 시작되면 준비가 풀림
+const AUTO_READY_KEY = 'nr.autoReady';
+const autoReady = () => store.get(AUTO_READY_KEY) === '1';
+const mustReady = () => (room?.players || []).filter((p) => p.id !== room.hostId && p.online);
+const notReady = () => mustReady().filter((p) => !p.ready);
+const allReady = () => notReady().length === 0;
+let readySending = false;
+function setReady(on) {
+  if (!room || !me() || isHost() || readySending) return;
+  readySending = true;
+  update(roomRef(room.code, 'players', playerId), { ready: on ? true : null })
+    .catch((e) => console.warn('[준비]', e.message))
+    .finally(() => { readySending = false; });
+}
+function renderReady() {
+  const ph = phase();
+  if (!room || (ph !== 'lobby' && ph !== 'results')) return;
+  const host = isHost();
+  const my = me();
+  // 자동 준비: 대기실·결과 화면에서 준비가 안 되어 있으면 바로 준비
+  if (!host && my && !my.ready && autoReady()) setReady(true);
+  const need = mustReady();
+  const waiting = notReady();
+  const done = need.length - waiting.length;
+  $$('.ready-box').forEach((box) => {
+    box.classList.toggle('hidden', need.length === 0 && host); // 혼자 있는 방장은 필요 없음
+    box.querySelector('.ready-count').textContent = need.length ? `준비 ${done} / ${need.length}명` : '함께할 사람을 기다리는 중';
+    box.querySelector('.ready-wait').textContent = waiting.length ? `아직: ${waiting.map((p) => p.name).join(', ')}` : need.length ? '모두 준비 완료!' : '';
+    box.classList.toggle('all', need.length > 0 && !waiting.length);
+    const mine = box.querySelector('.ready-mine');
+    mine.classList.toggle('hidden', host);
+    const btn = box.querySelector('.ready-btn');
+    const on = !!my?.ready;
+    btn.textContent = on ? '✓ 준비 완료 (누르면 취소)' : '준비하기';
+    btn.classList.toggle('btn-primary', !on);
+    btn.classList.toggle('btn-success', on);
+    box.querySelector('.ready-auto-input').checked = autoReady();
+  });
+  // 방장: 모두 준비해야 시작 가능
+  const ok = allReady();
+  for (const id of ['#btn-start', '#btn-again']) {
+    const b = $(id);
+    if (!b) continue;
+    b.disabled = host && !ok && !room.daily;
+    b.title = b.disabled ? '모두 준비해야 시작할 수 있어요.' : '';
+  }
+}
+$$('.ready-btn').forEach((b) => (b.onclick = () => setReady(!me()?.ready)));
+$$('.ready-auto-input').forEach((c) => (c.onchange = (e) => {
+  store.set(AUTO_READY_KEY, e.target.checked ? '1' : '0');
+  if (e.target.checked && me() && !me().ready) setReady(true);
+  renderReady();
+}));
+
 $('#btn-start').onclick = startRound;
 $('#btn-copy').onclick = async () => {
   const url = location.origin + location.pathname + '?room=' + room.code;
@@ -1260,6 +1318,7 @@ $('#shop-list').addEventListener('click', (e) => {
 function playerRow(p, extra = '') {
   const tags = [];
   if (p.id === room.hostId) tags.push('<span class="tag tag-warning">방장</span>');
+  else if (phase() === 'lobby' || phase() === 'results') tags.push(p.ready ? '<span class="tag tag-success">준비</span>' : '<span class="tag">대기</span>');
   if (p.id === playerId) tags.push('<span class="tag tag-blue">나</span>');
   const kick = isHost() && p.id !== playerId
     ? `<button class="kick" data-kick="${esc(p.id)}" title="${esc(p.name)}님 내보내기" aria-label="${esc(p.name)}님 내보내기">${icon('kick')}</button>` : '';
@@ -1310,6 +1369,7 @@ function render() {
     renderPicker();
     $('#btn-start').classList.toggle('hidden', !host);
     $('#wait-host').classList.toggle('hidden', host);
+    renderReady();
   } else if (ph === 'countdown') {
     show('countdown');
   } else if (ph === 'playing') {
@@ -1427,6 +1487,7 @@ function renderResults(host) {
   $('#res-list').innerHTML = items.join('') || '<li class="text-tertiary center">참가자가 없어요.</li>';
   $('#res-host').classList.toggle('hidden', !host);
   $('#res-wait').classList.toggle('hidden', host);
+  renderReady();
   $('#btn-again').innerHTML = `${icon('redo')}${room.daily ? '다시 도전 (같은 문제)' : '다음 판 (새 키워드)'}`;
   $('#btn-lobby').classList.toggle('hidden', !!room.daily);
   $('#res-mode').textContent = room.daily ? `오늘의 챔피언 · ${room.daily.date}` : modeLabel(room.mode);

@@ -738,3 +738,14 @@ code {
 .quest .qact { flex: none; min-width: 84px; text-align: right; }
 .quest.claimed .qtitle { color: var(--color-text-tertiary); }
 .quest-note { margin: 10px 0 0; }
+
+/* 준비(레디) */
+.ready-box { padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; }
+.ready-box.all { border-color: var(--color-success-border); background: var(--color-success-bg); }
+.ready-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.ready-count { font-weight: 600; font-size: 16px; font-variant-numeric: tabular-nums; }
+.ready-mine { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.ready-btn { min-width: 200px; }
+.ready-auto { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
+.ready-auto input { width: 16px; height: 16px; accent-color: var(--color-primary); }
+#btn-start:disabled, #btn-again:disabled { cursor: not-allowed; }
