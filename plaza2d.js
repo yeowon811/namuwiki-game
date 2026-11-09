@@ -3,7 +3,7 @@
 // - 걷는 방향에 따라 앞·옆·뒷모습으로 바뀜, 뒤쪽(위)으로 갈수록 작게 보임
 // - 방향키 / WASD / 바닥 클릭 / 화면 방향 버튼으로 이동, Shift 달리기, Space 점프
 // 위치(x, y)는 배경 그림 기준 0~1 (y = 발 위치)
-import { animalImg, lookAccHtml, VIEWS } from './animals.js?v=6';
+import { animalImg, lookAccHtml, VIEWS, walkFrames } from './animals.js?v=8';
 
 // 걸을 수 있는 바닥 (배경 그림의 타일 광장, 타원)
 const FLOOR = { cx: 0.5, cy: 0.635, rx: 0.38, ry: 0.245 };
@@ -78,7 +78,7 @@ export function createPlaza(container, { onMove, onJump }) {
       node, img: node.querySelector('img'), fig: node.querySelector('.fig'), inner: node.querySelector('.inner'),
       acc: node.querySelector('.accs'), accKey: '', label: node.querySelector('.label'),
       animal: p.a, look: lookOf(p), pos: { ...pos }, target: { ...pos }, facing: 'front', view: null,
-      moving: false, running: false, walkT: 0, stepT: 0, frame: 0, jumpStart: -1e9, jumpAt: null, dustT: 0,
+      moving: false, running: false, walkT: 0, stepT: 0, step: 0, frame: 0, jumpStart: -1e9, jumpAt: null, dustT: 0,
     };
     chars.set(p.id, c);
     return c;
@@ -88,10 +88,12 @@ export function createPlaza(container, { onMove, onJump }) {
   function setView(c, dt) {
     let view;
     if (c.facing === 'left' || c.facing === 'right') {
+      const frames = walkFrames(c.animal);
       if (c.moving) {
         c.stepT += dt * 1000;
-        if (c.stepT > (c.running ? STEP_MS * 0.6 : STEP_MS)) { c.stepT = 0; c.frame = 1 - c.frame; }
-      } else c.frame = 0;
+        if (c.stepT > (c.running ? STEP_MS * 0.6 : STEP_MS)) { c.stepT = 0; c.step = (c.step + 1) % frames.length; }
+        c.frame = frames[c.step % frames.length];
+      } else { c.frame = 0; c.step = 0; }
       view = `${c.facing}${c.frame + 1}`;
     } else view = c.facing === 'up' ? 'back' : 'front';
     const key = `${c.animal}/${view}`;

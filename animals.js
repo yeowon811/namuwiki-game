@@ -17,7 +17,7 @@ export const ANIMALS = [
   { id: 'bear', label: '곰', emoji: '🐻' },
   { id: 'fox', label: '여우', emoji: '🦊' },
   { id: 'sheep', label: '양', emoji: '🐑' },
-  { id: 'hamster', label: '햄스터', emoji: '🐹' },
+  { id: 'hamster', label: '햄스터', emoji: '🐹', runOnly: true }, // 옆으로 움직일 땐 달리는 그림(2번)만
 ];
 
 // 액세서리 부위: 부위마다 하나씩 착용
@@ -53,6 +53,8 @@ export const ACCESSORIES = [
 const BY_ID = new Map(ANIMALS.map((a) => [a.id, a]));
 const ACC_BY_ID = new Map(ACCESSORIES.map((a) => [a.id, a]));
 export const animalOf = (id) => BY_ID.get(id) || null;
+// 옆으로 움직일 때 쓰는 그림 번호: 보통은 1·2번을 번갈아, runOnly면 2번만
+export const walkFrames = (id) => (BY_ID.get(id)?.runOnly ? [1] : [0, 1]);
 export const accOf = (id) => ACC_BY_ID.get(id) || null;
 export const ANIMAL_VER = 3; // 그림을 바꾸면 올려서 캐시를 새로 받게 함
 export const animalImg = (id, view = 'front') => `img/animals/${id}-${view}.webp?v=${ANIMAL_VER}`;
@@ -140,25 +142,72 @@ const LAYERS = {
 export const viewKind = (view) => (view === 'front' || view === 'back' ? view : 'side');
 
 // 액세서리 위치: { left(%), top(%), width(em = 캐릭터 키 대비), ax, ay, sx(가로 배율) }
+// 그림마다 잰 값 (자동 측정): 그림 폭 w[앞, 뒤, 왼1, 왼2, 오1, 오2], 머리 가운데 hc[앞, 뒤],
+// 앞모습 두 눈 ef[왼눈 x, 오른눈 x, y], 옆모습 눈 es[왼1, 왼2, 오1, 오2] = [x, y]
+// → 액세서리를 각 그림의 실제 눈·머리 위치에 맞춤 (그림마다 자세·폭이 조금씩 달라도 어긋나지 않게)
+const FRAMES = {
+  cat: { w: [286, 256, 262, 269, 280, 279], hc: [137, 128], ef: [85, 192, 159], es: [[30, 159], [31, 161], [245, 148], [243, 158]] },
+  rabbit: { w: [220, 209, 220, 191, 189, 199], hc: [110, 105], ef: [68, 154, 185], es: [[25, 190], [26, 176], [160, 175], [174, 177]] },
+  penguin: { w: [260, 246, 261, 247, 251, 244], hc: [130, 122], ef: [85, 175, 151], es: [[44, 148], [45, 149], [207, 144], [206, 142]] },
+  chick: { w: [250, 238, 235, 244, 272, 252], hc: [126, 119], ef: [79, 173, 157], es: [[38, 143], [41, 148], [231, 154], [212, 149]] },
+  panda: { w: [269, 269, 253, 248, 245, 237], hc: [133, 134], ef: [87, 183, 137], es: [[36, 149], [38, 139], [207, 133], [199, 130]] },
+  dog: { w: [348, 356, 285, 298, 288, 272], hc: [174, 178], ef: [126, 227, 131], es: [[44, 134], [42, 131], [239, 123], [231, 121]] },
+  dinosaur: { w: [286, 239, 307, 329, 311, 294], hc: [121, 119], ef: [70, 162, 141], es: [[42, 137], [44, 147], [270, 133], [253, 119]] },
+  bear: { w: [255, 267, 246, 244, 234, 249], hc: [126, 132], ef: [78, 175, 134], es: [[50, 143], [40, 135], [190, 134], [201, 137]] },
+  fox: { w: [298, 270, 310, 335, 315, 337], hc: [132, 134], ef: [84, 184, 155], es: [[46, 156], [42, 154], [270, 146], [296, 143]] },
+  sheep: { w: [343, 318, 280, 261, 266, 277], hc: [171, 158], ef: [125, 216, 156], es: [[30, 143], [31, 151], [231, 138], [240, 154]] },
+  hamster: { w: [299, 294, 266, 267, 264, 249], hc: [149, 146], ef: [103, 196, 124], es: [[31, 137], [43, 209], [234, 137], [207, 211]] },
+};
+const VIEW_IDX = { front: 0, back: 1, left1: 2, left2: 3, right1: 4, right2: 5 };
+const LENS = 0.445; // 안경 그림에서 두 렌즈 가운데 사이 거리 (그림 폭 대비)
+
+// 액세서리 위치: { left(%), top(%), width(em = 캐릭터 키 대비), ax, ay, sx(가로 배율) }
 export function accPlace(animal, view, slot, item) {
   const an = ANCHORS[animal];
-  if (!an) return null;
+  const fr = FRAMES[animal];
+  if (!an || !fr) return null;
   const kind = viewKind(view);
   const isSide = kind === 'side';
-  const second = isSide && an.S2 && view.endsWith('2');
-  const set = second ? an.S2 : isSide ? an.S : an.F;
-  const p = set[SLOT_ANCHOR[slot]];
-  const W = second ? an.sw2 : isSide ? an.sw : an.fw;
-  // 뒷모습은 앞모습 좌우 반전, 오른쪽 옆모습은 왼쪽 옆모습 좌우 반전
-  const mirror = kind === 'back' || view.startsWith('right');
-  const x = mirror ? W - p[0] : p[0];
+  const right = view.startsWith('right');
+  const second = view.endsWith('2');
   const fit = SLOT_FIT[slot];
+  const W = fr.w[VIEW_IDX[view]];
+  let x;
+  let y;
+  let w;
+  let eyesY;
+  if (kind === 'front' || kind === 'back') {
+    const p = an.F[SLOT_ANCHOR[slot]];
+    w = p[2];
+    eyesY = fr.ef[2];
+    // 뒷모습: 앞모습을 머리 가운데 기준으로 좌우 반전
+    x = kind === 'front' ? p[0] : fr.hc[1] - (p[0] - fr.hc[0]);
+    y = p[1];
+    if (slot === 'eyes') {
+      // 안경: 두 렌즈를 두 눈에 정확히
+      x = (fr.ef[0] + fr.ef[1]) / 2;
+      y = fr.ef[2];
+      w = (fr.ef[1] - fr.ef[0]) / LENS;
+    }
+  } else {
+    // 옆모습: 기준(왼쪽 1번, 햄스터처럼 두 번째 장이 많이 다르면 왼쪽 2번)에서 잰 눈과의 거리를 지금 그림의 눈에 맞춤
+    const useS2 = second && an.S2;
+    const set = useS2 ? an.S2 : an.S;
+    const srcEye = fr.es[useS2 ? 1 : 0];
+    const eye = fr.es[VIEW_IDX[view] - 2];
+    const p = set[SLOT_ANCHOR[slot]];
+    w = p[2];
+    const dx = p[0] - srcEye[0];
+    x = right ? eye[0] - dx : eye[0] + dx;
+    y = slot === 'feet' ? p[1] : eye[1] + (p[1] - srcEye[1]);
+    eyesY = eye[1];
+    if (slot === 'eyes') { x = eye[0]; y = eye[1]; }
+  }
   // 푹 쓰는 모자(비니·야구 모자·베레모)는 아랫단을 이마에
-  const eyesY = set.eyes[1];
-  const y = item?.brow != null ? p[1] + (eyesY - p[1]) * item.brow : p[1];
+  if (item?.brow != null) y += (eyesY - y) * item.brow;
   return {
-    left: (x / W) * 100, top: (y / H) * 100, width: (p[2] / H) * (item?.size || 1),
-    ax: fit.ax, ay: item?.ay ?? fit.ay, sx: isSide ? fit.side : 1, mirror,
+    left: (x / W) * 100, top: (y / H) * 100, width: (w / H) * (item?.size || 1),
+    ax: fit.ax, ay: item?.ay ?? fit.ay, sx: isSide ? fit.side : 1, mirror: right,
   };
 }
 

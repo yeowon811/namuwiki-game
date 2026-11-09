@@ -10,8 +10,8 @@ import KEYWORDS from './keywords.js';
 import {
   ANIMALS, ACCESSORIES, SLOTS, ANIMAL_PRICE, ACC_PRICE,
   animalOf, accOf, animalImg, accHtml, cleanLook, ownsAnimal, ownsAcc, lookAccHtml,
-} from './animals.js?v=6';
-import { createPlaza } from './plaza2d.js?v=6';
+} from './animals.js?v=8';
+import { createPlaza } from './plaza2d.js?v=8';
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
