@@ -331,6 +331,7 @@
       <button id="btn-start" class="btn btn-primary btn-lg btn-block"><svg class="ic"><use href="#i-play"/></svg>게임 시작</button>
       <p id="wait-host" class="text-tertiary center">방장이 게임을 시작하길 기다리는 중…</p>
       <button class="btn btn-text btn-leave"><svg class="ic"><use href="#i-logout"/></svg>방 나가기</button>
+      <button class="btn btn-text btn-danger-text btn-destroy hidden" type="button">💣 방 없애기 (방장)</button>
     </section>
 
     <!-- 카운트다운 -->
@@ -394,6 +395,8 @@
         <ul id="play-players" class="list"></ul>
       </div>
       <button id="btn-end" class="btn btn-text">게임 끝내기 (방장)</button>
+      <button class="btn btn-text btn-leave"><svg class="ic"><use href="#i-logout"/></svg>방 나가기</button>
+      <button class="btn btn-text btn-danger-text btn-destroy hidden" type="button">💣 방 없애기 (방장)</button>
     </section>
 
     <!-- 결과 -->
@@ -411,6 +414,7 @@
       </div>
       <p id="res-wait" class="text-tertiary center">방장이 다음 판을 시작하길 기다리는 중…</p>
       <button class="btn btn-text btn-leave"><svg class="ic"><use href="#i-logout"/></svg>방 나가기</button>
+      <button class="btn btn-text btn-danger-text btn-destroy hidden" type="button">💣 방 없애기 (방장)</button>
     </section>
   </main>
 
@@ -461,6 +465,6 @@
   <div id="toast" class="message" role="status"></div>
 
   <!-- 코드를 바꾸면 ?v= 숫자를 올려서 브라우저 캐시에 남은 옛 파일을 쓰지 않게 함 -->
-  <script type="module" src="app.js?v=34"></script>
+  <script type="module" src="app.js?v=35"></script>
 </body>
 </html>

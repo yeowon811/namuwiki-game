@@ -321,6 +321,7 @@ async function joinRoom(code, name) {
   if (!snap.exists()) throw new Error('존재하지 않는 방 코드예요.');
   const players = snap.val().players || {};
   if (snap.val().kicked?.[playerId]) throw new Error('방장이 이 방에서 내보냈어요.');
+  if (snap.val().closed) throw new Error('방장이 없앤 방이에요.');
   if (players[playerId]?.name) {
     const patch = { online: true, offlineSince: null, char: myLook() };
     if (name) patch.name = name;
@@ -342,6 +343,12 @@ function enterRoom(code) {
   unsubscribeRoom?.();
   unsubscribeRoom = onValue(roomRef(code), (snap) => {
     const v = snap.val();
+    if (v?.closed) {
+      const byMe = v.hostId === playerId;
+      leaveLocal();
+      toast(byMe ? '방을 없앴어요.' : '방장이 방을 없앴어요.', byMe ? 'success' : 'warning');
+      return;
+    }
     const kicked = !!v?.kicked?.[playerId];
     if (!v || !v.players?.[playerId]?.name || kicked) {
       leaveLocal();
@@ -851,7 +858,24 @@ function joinInvite() {
 }
 $('#btn-invite').onclick = joinInvite;
 
-$$('.btn-leave').forEach((b) => (b.onclick = () => confirm('방에서 나갈까요?') && leaveRoom()));
+$$('.btn-leave').forEach((b) => (b.onclick = () => {
+  const racing = room?.state === 'playing' && me()?.status === 'playing';
+  if (confirm(racing ? '게임 중이에요. 나가면 이번 판 기록이 남지 않아요. 방에서 나갈까요?' : '방에서 나갈까요?')) leaveRoom();
+}));
+// 방장: 방 없애기 (모든 참가자가 방에서 나가고 방이 지워짐)
+$$('.btn-destroy').forEach((b) => (b.onclick = () => {
+  if (!isHost()) return;
+  if (confirm('방을 없앨까요?\n모든 참가자가 방에서 나가게 되고, 되돌릴 수 없어요.')) destroyRoom().catch((e) => { console.error(e); toast('방을 없애지 못했어요.', 'error'); });
+}));
+async function destroyRoom() {
+  const code = currentCode;
+  if (!code || !isHost()) return;
+  // 먼저 '없앰' 표시 → 모든 참가자 화면이 방에서 나감, 그다음 방을 지움
+  await update(ref(db), { [`rooms/${code}/closed`]: true, [`lobbies/${code}`]: null });
+  // 다른 사람들이 '없앰' 표시를 받을 시간을 잠깐 준 뒤 지움
+  await new Promise((r) => setTimeout(r, 1500));
+  await update(ref(db), { [`rooms/${code}`]: null, [`roomIndex/${code}`]: null });
+}
 
 // ---------- 로비 이벤트 ----------
 $$('#mode-seg button').forEach((b) => (b.onclick = () => isHost() && update(roomRef(room.code), { mode: b.dataset.mode })));
@@ -1219,6 +1243,7 @@ function render() {
   if (ph !== 'lobby') plaza?.pause();
   if (ph === 'home') { syncExt(); return showHome(); }
   unwatchLobbies();
+  $$('.btn-destroy').forEach((b) => b.classList.toggle('hidden', !isHost()));
   unwatchDaily();
   const host = isHost();
   const my = me();
