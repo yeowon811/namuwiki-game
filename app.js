@@ -626,9 +626,11 @@ function renderLobbies() {
   $('#open-rooms').innerHTML = open.length
     ? open.map(([code, l]) => {
       const full = l.count >= MAX_PLAYERS;
-      const face = animalOf(l.a)
-        ? `<span class="avatar avatar-animal"><img src="${animalImg(l.a, 'icon')}" alt="${animalOf(l.a).label}"></span>`
-        : `<span class="avatar" style="background:var(--color-primary-bg);font-size:18px">${esc(safeGlyph(l.e, '🏁'))}</span>`;
+      // 방장이 지금 쓰는 캐릭터 (방장 화면이 예전 버전이어도 보이도록 직접 읽어 옴)
+      const a = animalOf(userAnimal(roomHost(code, renderLobbies), renderLobbies))?.id || animalOf(l.a)?.id;
+      const face = a
+        ? `<span class="avatar avatar-animal"><img src="${animalImg(a, 'icon')}" alt="${animalOf(a).label}"></span>`
+        : '<span class="avatar avatar-animal"></span>';
       return `<li>${face}`
         + `<div class="info"><span class="title">${esc(l.name || '이름 없음')}님의 방</span>`
         + `<span class="meta">${STATE_TAG[l.state] || ''}<span class="tag">${esc(modeLabel(l.mode))}</span>${l.count}명 · ${code}</span></div>`
@@ -699,19 +701,30 @@ function dailyRanking() {
     .sort((a, b) => a.ms - b.ms || (a.at || 0) - (b.at || 0));
 }
 // 오늘의 챔피언 옆 캐릭터: 그 사람이 지금 쓰는 동물 (계정에서 읽어 옴, 한 번 읽으면 기억)
-const lookCache = new Map(); // uid → 동물 id | 'loading'
+// 다른 사람 정보를 한 번 읽으면 1분 동안 기억 (읽는 중이면 null, 다 읽으면 onLoaded로 다시 그림)
+const LOOKUP_MS = 60 * 1000;
+function cachedLookup(cache, key, path, pick, onLoaded) {
+  if (key == null) return null;
+  const c = cache.get(key);
+  if (c && (c.loading || Date.now() - c.at < LOOKUP_MS)) return c.val;
+  cache.set(key, { loading: true, val: c?.val ?? null, at: 0 });
+  get(ref(db, path))
+    .then((s) => { cache.set(key, { val: pick(s.val()), at: Date.now() }); onLoaded?.(); })
+    .catch(() => cache.set(key, { val: c?.val ?? null, at: Date.now() }));
+  return c?.val ?? null;
+}
+const lookCache = new Map(); // uid → 동물 id
+const hostCache = new Map(); // 방 코드 → 방장 uid
+function userAnimal(uid, onLoaded) {
+  if (uid && uid === playerId && profile) return myLook().a;
+  return cachedLookup(lookCache, uid, `users/${uid}/look/a`, (v) => animalOf(v)?.id || 'cat', onLoaded);
+}
+const roomHost = (code, onLoaded) => cachedLookup(hostCache, code, `rooms/${code}/hostId`, (v) => v || null, onLoaded);
+// 오늘의 챔피언 옆 캐릭터: 그 사람이 지금 쓰는 동물
 function championFace(r) {
-  if (r.id === playerId) lookCache.set(r.id, myLook().a);
-  const a = lookCache.get(r.id);
-  if (a === undefined) {
-    lookCache.set(r.id, 'loading');
-    get(ref(db, `users/${r.id}/look/a`))
-      .then((s) => { lookCache.set(r.id, animalOf(s.val())?.id || 'cat'); renderDaily(); })
-      .catch(() => lookCache.set(r.id, 'cat'));
-  }
-  const id = animalOf(a)?.id;
+  const id = animalOf(userAnimal(r.id, renderDaily))?.id;
   if (id) return `<img class="face" src="${animalImg(id, 'icon')}" alt="${animalOf(id).label}">`;
-  return `<span class="face"></span>`;
+  return '<span class="face"></span>';
 }
 function renderDaily() {
   const pz = daily.puzzle;
