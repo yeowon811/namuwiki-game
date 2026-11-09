@@ -478,6 +478,7 @@ async function leaveRoom() {
 }
 
 function leaveLocal() {
+  showReadyBar(false);
   unsubscribeRoom?.();
   unsubscribeRoom = null;
   if (currentCode) {
@@ -1669,6 +1670,7 @@ let rejoinTried = false;
 function showHome() {
   renderHeaderUser();
   if (room) return;
+  showReadyBar(false); // 방에서 나오면 준비 막대 숨김
   if (!authReady) return show('loading');
   if (!authUser) return show('auth');
   if (!profileLoaded) return show('loading');
