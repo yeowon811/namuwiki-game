@@ -439,6 +439,8 @@ code {
 .path { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--color-border-secondary); display: flex; flex-wrap: wrap; align-items: center; gap: 4px 2px; font-size: 13px; }
 .path a { color: var(--color-text-secondary); padding: 0 4px; border-radius: var(--radius-sm); transition: all var(--motion); }
 .path a:hover { color: var(--color-text); background: var(--color-fill-tertiary); }
+.path a.ret { color: var(--color-text-tertiary); font-style: italic; }
+.path a.ret::before { content: '↩ '; }
 .path a.cp { color: var(--color-success-text, var(--color-success)); font-weight: 600; }
 .path a.bad { color: var(--color-error-text); background: var(--color-error-bg); }
 .path .sep { color: var(--color-text-quaternary); font-size: 10px; }

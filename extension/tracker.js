@@ -24,6 +24,7 @@ export function matches(page, keyword) {
 
 export const CLICK_WINDOW_MS = 8000; // 링크 클릭 후 이 시간 안에 문서가 바뀌면 '링크로 이동'으로 인정
 export const BACK_WINDOW_MS = 3000;
+export const RETURN_WINDOW_MS = 20000; // '이전 문서로' 버튼을 누른 뒤 이 시간 안에 그 문서가 열리면 되돌아가기로 인정
 
 export function newRace(info) {
   return {
@@ -40,7 +41,11 @@ export function newRace(info) {
     startAt: info.startAt, // 내 PC 시계 기준 ms
     tabId: null,
     gameTabId: info.gameTabId ?? null,
-    steps: [], // { title, h: 'start' | 'link' | 'back' | 'other', t }
+    steps: [], // { title, h: 'start' | 'link' | 'back' | 'other' | 'return', t }
+    trail: [], // 되돌아가기용: 지나온 문서 (되돌아가면 하나씩 빠짐)
+    returnTo: null, // '이전 문서로'를 눌러 돌아가는 중인 문서 { title, t }
+    hints: [], // 힌트를 본 목표 번호 (릴레이는 목표마다 따로)
+    hintText: {}, // 목표 번호 → 힌트 내용
     offDoc: false,
     finished: false,
     finishT: null,
@@ -66,8 +71,12 @@ export function applyNav(race, nav) {
     race.offDoc = false; // 같은 문서로 돌아옴 (문단 이동, 새로고침 등)
     return false;
   }
+  race.trail = race.trail || [];
   let h;
-  if (race.steps.length === 0) h = matches(page, race.start) ? 'start' : 'other';
+  const ret = race.returnTo;
+  race.returnTo = null;
+  if (ret && nav.t - ret.t >= 0 && nav.t - ret.t < RETURN_WINDOW_MS && norm(ret.title) === norm(page.title)) h = 'return';
+  else if (race.steps.length === 0) h = matches(page, race.start) ? 'start' : 'other';
   else if (race.offDoc) h = 'other';
   else if (nav.popT && nav.t - nav.popT >= 0 && nav.t - nav.popT < BACK_WINDOW_MS) h = 'back';
   else if (nav.clickT && nav.t - nav.clickT >= 0 && nav.t - nav.clickT < CLICK_WINDOW_MS) h = 'link';
@@ -76,6 +85,8 @@ export function applyNav(race, nav) {
   const step = { title: page.title, h, t: nav.t };
   race.steps.push(step);
   race.offDoc = false;
+  if (h === 'return') race.trail.pop();
+  else race.trail.push(page.title);
   const targets = race.targets || [race.target];
   race.leg = race.leg || 0;
   race.legT = race.legT || [];
@@ -89,6 +100,25 @@ export function applyNav(race, nav) {
     }
   }
   return true;
+}
+
+// '이전 문서로' 버튼: 돌아갈 문서 제목 (돌아갈 곳이 없으면 null)
+export function requestReturn(race, t) {
+  const trail = race.trail || [];
+  if (race.finished || trail.length < 2) return null;
+  const title = trail[trail.length - 2];
+  race.returnTo = { title, t };
+  return title;
+}
+
+// 힌트: 지금 목표에 대한 힌트를 처음 보는 것인지 기록
+export function useHint(race) {
+  const targets = race.targets || [race.target];
+  const idx = Math.min(race.leg || 0, targets.length - 1);
+  race.hints = race.hints || [];
+  const isNew = !race.hints.includes(idx);
+  if (isNew) race.hints.push(idx);
+  return { idx, target: targets[idx], isNew };
 }
 
 export function summary(race) {
@@ -110,6 +140,11 @@ export function summary(race) {
     steps: race.steps.map(({ title, h, cp }) => (cp ? { title, h, cp } : { title, h })),
     clicks: Math.max(0, race.steps.length - 1),
     violations: race.steps.filter((s) => s.h === 'back' || s.h === 'other').length,
+    returns: race.steps.filter((s) => s.h === 'return').length,
+    canReturn: !race.finished && (race.trail || []).length >= 2,
+    returnTitle: (race.trail || []).length >= 2 ? race.trail[race.trail.length - 2] : null,
+    hints: (race.hints || []).length,
+    hintText: race.hintText?.[Math.min(race.leg || 0, (race.targets || [race.target]).length - 1)] || null,
     finished: race.finished,
     finishT: race.finishT,
     hasTab: race.tabId != null,

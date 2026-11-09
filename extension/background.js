@@ -1,4 +1,4 @@
-import { newRace, applyNav, summary, pageFromUrl } from './tracker.js';
+import { newRace, applyNav, summary, pageFromUrl, requestReturn, useHint } from './tracker.js';
 
 const namuUrl = (t) => 'https://namu.wiki/w/' + encodeURIComponent(t);
 
@@ -38,6 +38,39 @@ async function openRaceTab(race) {
   const last = race.steps[race.steps.length - 1];
   const tab = await chrome.tabs.create({ url: namuUrl(last ? last.title : race.start) });
   race.tabId = tab.id;
+}
+
+// 위키백과 요약 (힌트): 처음 1~2문장
+function shorten(text) {
+  const t = String(text || '').replace(/\s+/g, ' ').trim();
+  const sentences = t.match(/[^.!?。]+[.!?。]?/g) || [t];
+  let out = '';
+  for (const s of sentences) {
+    if (out && (out + s).length > 170) break;
+    out += s;
+    if (out.length > 90) break;
+  }
+  return out.trim().slice(0, 220);
+}
+async function wikiSummary(title) {
+  const summaryOf = async (t) => {
+    try {
+      const r = await fetch(`https://ko.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(t.replace(/ /g, '_'))}`);
+      if (!r.ok) return null;
+      const j = await r.json();
+      if (j.type === 'disambiguation' || !j.extract) return null;
+      return shorten(j.extract);
+    } catch { return null; }
+  };
+  let text = await summaryOf(title);
+  if (!text) {
+    try {
+      const r = await fetch(`https://ko.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(title)}&srlimit=1&format=json&origin=*`);
+      const found = (await r.json())?.query?.search?.[0]?.title;
+      if (found) text = await summaryOf(found);
+    } catch { /* 검색 실패 */ }
+  }
+  return text || '위키백과에서 설명을 찾지 못했어요. 문서 제목에서 떠오르는 분야로 가 보세요!';
 }
 
 async function handle(msg, sender) {
@@ -85,6 +118,34 @@ async function handle(msg, sender) {
     case 'NAMU_HELLO': {
       if (!race || tabId !== race.tabId) return { race: null };
       return { race: summary(race) };
+    }
+    case 'RETURN': {
+      // '이전 문서로' 버튼: 레이스 탭을 직전 문서로 보냄 (규칙 위반이 아니라 되돌아가기로 기록)
+      if (!race || tabId !== race.tabId) return { race: null };
+      const title = requestReturn(race, Date.now());
+      if (!title) return { race: summary(race) };
+      await save(race);
+      chrome.tabs.update(race.tabId, { url: namuUrl(title) }).catch(() => {});
+      return { race: summary(race), returnTo: title };
+    }
+    case 'HINT': {
+      // 힌트: 지금 목표의 위키백과 요약. 목표마다 처음 볼 때만 페널티
+      if (!race || tabId !== race.tabId || race.finished) return { race: summary(race) };
+      const h = useHint(race);
+      race.hintText = race.hintText || {};
+      if (!race.hintText[h.idx]) {
+        await save(race); // 페널티는 먼저 기록
+        race.hintText[h.idx] = await wikiSummary(h.target);
+        const latest = await load(); // 요약을 받는 동안 바뀐 기록 반영
+        if (latest && latest.code === race.code && latest.round === race.round) {
+          latest.hints = race.hints;
+          latest.hintText = { ...(latest.hintText || {}), [h.idx]: race.hintText[h.idx] };
+          race = latest;
+        }
+      }
+      await save(race);
+      if (h.isNew) notifyGame(race);
+      return { race: summary(race), hint: { target: h.target, text: race.hintText[h.idx], isNew: h.isNew } };
     }
     case 'NAV': {
       if (!race || tabId !== race.tabId) return { race: null };

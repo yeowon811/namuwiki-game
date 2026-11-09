@@ -151,6 +151,14 @@
         .row{display:flex;justify-content:space-between;gap:12px}
         .stat{display:flex;align-items:center;gap:6px;font-weight:600;font-variant-numeric:tabular-nums}
         .stat svg{color:var(--text3)}
+        .acts{display:flex;gap:6px;margin-top:10px}
+        .acts button{flex:1;height:28px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);
+          font:inherit;font-size:12px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:4px}
+        .acts button:hover:not(:disabled){border-color:var(--primary);color:var(--primary)}
+        .acts button:disabled{color:var(--text3);cursor:not-allowed;background:var(--fill)}
+        .hint{margin-top:8px;font-size:12px;line-height:1.55;padding:8px 10px;border-radius:6px;background:var(--primary-bg);color:var(--text)}
+        .hint b{color:var(--primary)}
+        .pen{margin-top:6px;font-size:12px;color:var(--gold)}
         .warn{margin-top:8px;font-size:12px;padding:0 7px;line-height:20px;border-radius:4px;display:inline-block;
           color:var(--error);background:var(--error-bg);border:1px solid var(--error-border)}
         .board{border-top:1px solid var(--border)}
@@ -211,6 +219,12 @@
             <span class="stat"><svg viewBox="0 0 24 24"><path d="M9 3.5v7.2M9 10.7V6.5a1.7 1.7 0 0 1 3.4 0v4M12.4 10.5V8.3a1.7 1.7 0 0 1 3.4 0v2.5M15.8 10.8V9.6a1.7 1.7 0 0 1 3.4 0v4.6a6.3 6.3 0 0 1-6.3 6.3h-1.2a5.5 5.5 0 0 1-4.6-2.5L4.6 15a1.6 1.6 0 0 1 2.6-1.9L9 15.2V5.2a1.7 1.7 0 0 1 3.4 0" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="clicks"></span></span>
             <span class="stat"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7.5V12l3 2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span class="time"></span></span>
           </div>
+          <div class="acts">
+            <button type="button" class="ret" title="막다른 문서일 때 직전 문서로 돌아가요. 규칙 위반이 아니고 클릭 1번으로만 세요.">↩ 이전 문서로</button>
+            <button type="button" class="hintb" title="목표 문서가 무엇인지 짧은 설명을 봐요. 페널티가 있어요.">💡 힌트</button>
+          </div>
+          <div class="hint" hidden></div>
+          <div class="pen" hidden></div>
           <div class="warn" hidden></div>
         </div>
         <div class="board" hidden>
@@ -219,6 +233,27 @@
         </div>
       </div>`;
     root.querySelector('.eb').addEventListener('click', () => { root.querySelector('.end').hidden = true; if (!race) removeHud(); });
+    root.querySelector('.ret').addEventListener('click', async () => {
+      if (!race?.canReturn) return;
+      const res = await send({ type: 'RETURN' });
+      if (res?.returnTo) toast(`이전 문서 '${res.returnTo}'(으)로 돌아가요. (클릭 +1)`, 2500, 'info');
+      if (res?.race) setRace(res.race);
+    });
+    root.querySelector('.hintb').addEventListener('click', async () => {
+      if (!race || race.finished) return;
+      if (!race.hintText) {
+        const pen = race.mode === 'clicks' ? '+3클릭' : '+30초';
+        if (!confirm(`힌트를 보면 기록에 ${pen} 페널티가 붙어요. 볼까요?`)) return;
+      }
+      const btn = root.querySelector('.hintb');
+      btn.disabled = true;
+      btn.textContent = '불러오는 중…';
+      const res = await send({ type: 'HINT' });
+      btn.disabled = false;
+      btn.textContent = '💡 힌트';
+      if (res?.race) setRace(res.race);
+      if (res?.hint) showHint(res.hint.target, res.hint.text);
+    });
     root.querySelector('.bhead').addEventListener('click', () => {
       boardOpen = !boardOpen;
       try { sessionStorage.setItem('nr-board-open', boardOpen ? '1' : '0'); } catch {}
@@ -330,6 +365,13 @@
     }
   }
 
+  function showHint(target, text) {
+    if (!root) return;
+    const el = root.querySelector('.hint');
+    el.innerHTML = `<b>💡 ${esc(target)}</b><br>${esc(text)}`;
+    el.hidden = false;
+  }
+
   function setRace(r) {
     const prevKey = race && `${race.code}/${race.round}`;
     const prevLeg = race?.leg || 0;
@@ -352,6 +394,17 @@
       toast(`${leg}번째 목표 도착! 다음 목표: ${current}`, 5000, 'success');
     }
     root.querySelector('.clicks').textContent = `${race.clicks}클릭`;
+    // 되돌아가기 / 힌트
+    const ret = root.querySelector('.ret');
+    ret.disabled = !race.canReturn;
+    ret.title = race.canReturn ? `'${race.returnTitle}'(으)로 돌아가요. 규칙 위반이 아니고 클릭 1번으로만 세요.` : '돌아갈 문서가 없어요.';
+    root.querySelector('.hintb').disabled = !!race.finished;
+    const hintEl = root.querySelector('.hint');
+    if (race.hintText && !race.finished) showHint(race.current || race.target, race.hintText);
+    else if (!sameRace || race.finished || (total > 1 && leg > prevLeg)) hintEl.hidden = true; // 다음 목표로 넘어가면 힌트 숨김
+    const pen = root.querySelector('.pen');
+    pen.hidden = !race.hints;
+    pen.textContent = `💡 힌트 ${race.hints}회 · 페널티 ${race.mode === 'clicks' ? `+${race.hints * 3}클릭` : `+${race.hints * 30}초`}`;
     const warn = root.querySelector('.warn');
     warn.hidden = !race.violations;
     warn.textContent = `링크 클릭이 아닌 이동 ${race.violations}회`;

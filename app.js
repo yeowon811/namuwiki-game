@@ -122,16 +122,20 @@ function onExtState() {
     if (!ext.oldWarned) { ext.oldWarned = true; toast('릴레이 모드는 확장 프로그램을 업데이트해야 기록돼요. (1.3.0 이상)', 'warning'); }
     return;
   }
-  const key = `${raceKey()}/${r.steps.length}/${r.finished}/${r.leg}`;
+  const key = `${raceKey()}/${r.steps.length}/${r.finished}/${r.leg}/${r.hints || 0}`;
   if (ext.writtenKey === key) return;
   const prevLeg = me()?.leg || 0;
   ext.writtenKey = key;
+  const hints = r.hints || 0;
+  const clicksMode = room.mode === 'clicks';
   const data = {
     auto: true,
     steps: r.steps,
     path: r.steps.map((s) => s.title),
-    clicks: r.clicks,
+    clicks: r.clicks + (clicksMode ? hints * HINT_CLICKS : 0),
     violations: r.violations,
+    hints,
+    returns: r.returns || 0,
   };
   if (relay) {
     data.leg = r.leg;
@@ -141,11 +145,16 @@ function onExtState() {
   }
   if (r.finished) {
     data.status = 'finished';
-    data.elapsed = Math.max(0, r.finishT + clockOffset - room.startAt);
+    data.elapsed = Math.max(0, r.finishT + clockOffset - room.startAt) + (clicksMode ? 0 : hints * HINT_MS);
   }
   update(roomRef(room.code, 'players', playerId), data).catch((e) => console.error(e));
   if (r.finished) toast('도착! 기록이 저장됐어요.', 'success');
 }
+
+// 힌트 페널티: 최소 클릭은 +3클릭, 타임어택·릴레이·오늘의 챔피언은 +30초
+const HINT_MS = 30 * 1000;
+const HINT_CLICKS = 3;
+const hintPenaltyText = (mode, n) => (mode === 'clicks' ? `+${n * HINT_CLICKS}클릭` : `+${n * HINT_MS / 1000}초`);
 
 function renderProgress() {
   const el = $('#play-progress');
@@ -158,6 +167,7 @@ function renderProgress() {
     return;
   }
   el.innerHTML = `<b>${r.clicks}클릭</b> · 지금 문서 <b>${esc(last.title)}</b>`
+    + (r.hints ? `<br>💡 힌트 ${r.hints}회 (${hintPenaltyText(room.mode, r.hints)})` : '')
     + (r.violations ? `<br><span class="warn">링크 클릭이 아닌 이동 ${r.violations}회</span>` : '');
 }
 
@@ -473,6 +483,8 @@ function startRound() {
     updates[`players/${p.id}/violations`] = null;
     updates[`players/${p.id}/auto`] = null;
     updates[`players/${p.id}/leg`] = null;
+    updates[`players/${p.id}/hints`] = null;
+    updates[`players/${p.id}/returns`] = null;
     updates[`players/${p.id}/legTimes`] = null;
   }
   update(roomRef(room.code), updates);
@@ -1243,7 +1255,9 @@ function renderResults(host) {
     // 자동 기록이면 각 이동이 링크 클릭이었는지 표시, 수동 기록이면 적은 경로만 표시
     const steps = Array.isArray(p.steps) ? p.steps : Array.isArray(p.path) ? p.path.map((title, i) => ({ title, cp: relay && i > 0 && targets.includes(title) })) : [];
     const badMark = { back: '뒤로가기', other: '링크 클릭 아님' };
-    const cls = (s) => (badMark[s.h] ? ` class="bad" title="${badMark[s.h]}"` : s.cp ? ' class="cp" title="목표 도착"' : '');
+    const cls = (s) => (badMark[s.h] ? ` class="bad" title="${badMark[s.h]}"`
+      : s.h === 'return' ? ' class="ret" title="이전 문서로 되돌아가기"'
+        : s.cp ? ' class="cp" title="목표 도착"' : '');
     const path = steps.length
       ? `<div class="path">${steps.map((s) => `<a href="${namuUrl(s.title)}" target="_blank" rel="noopener"${cls(s)}>${esc(s.title)}</a>`).join(icon('right', 'sep'))}</div>`
       : '';
@@ -1253,6 +1267,8 @@ function renderResults(host) {
       flags.push(...p.legTimes.map((t, i) => `<span class="tag tag-success">${i + 1}. ${esc(targets[i])} ${fmtTimePrecise(t)}</span>`));
     }
     if (finished && p.auto === false) flags.push('<span class="tag tag-warning">수동 기록</span>');
+    if (p.hints) flags.push(`<span class="tag tag-warning">💡 힌트 ${p.hints}회 (${hintPenaltyText(room.mode, p.hints)})</span>`);
+    if (p.returns) flags.push(`<span class="tag">↩ 되돌아가기 ${p.returns}회</span>`);
     if (p.violations) flags.push(`<span class="tag tag-error">규칙 위반 의심 ${p.violations}회</span>`);
     const mine = p.id === playerId ? ' <span class="tag tag-blue">나</span>' : '';
     return `<li class="${finished && rank === 1 ? 'first' : ''}"><div class="head">${rankStr}<span class="name">${esc(p.name)}${mine}</span><span class="score">${score}</span></div>${path}${flags.length ? `<div class="flags">${flags.join('')}</div>` : ''}</li>`;
