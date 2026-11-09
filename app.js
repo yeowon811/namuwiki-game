@@ -1117,16 +1117,15 @@ function renderPicker() {
   const sig = JSON.stringify([mine, profile?.owned || null]);
   if (sig === pickerSig) return;
   pickerSig = sig;
-  const lock = (price) => `<span class="lock">${icon('lock')}${price}P</span>`;
   $('#char-animals').innerHTML = ANIMALS.map((a) => {
     const own = ownsAnimal(profile, a.id);
     return `<button type="button" data-a="${a.id}" class="${mine.a === a.id ? 'active' : ''} ${own ? '' : 'locked'}" ${own ? '' : 'disabled'} aria-label="${a.label}${own ? '' : ' (잠김)'}">`
-      + `<img src="${animalImg(a.id, 'icon')}" alt=""><span>${a.label}</span>${own ? '' : lock(ANIMAL_PRICE)}</button>`;
+      + `<img src="${animalImg(a.id, 'icon')}" alt=""><span>${a.label}</span></button>`;
   }).join('');
   $('#char-accs').innerHTML = ACCESSORIES.map((it) => {
     const own = ownsAcc(profile, it.id);
     return `<button type="button" data-acc="${it.id}" class="${mine[it.slot] === it.id ? 'active' : ''} ${own ? '' : 'locked'}" ${own ? '' : 'disabled'} aria-label="${it.label}${own ? '' : ' (잠김)'}">`
-      + `${accHtml(it, 'acc-ico')}<span>${it.label}</span>${own ? '' : lock(ACC_PRICE)}</button>`;
+      + `${accHtml(it, 'acc-ico')}<span>${it.label}</span></button>`;
   }).join('');
 }
 
