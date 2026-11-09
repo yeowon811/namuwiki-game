@@ -739,13 +739,24 @@ code {
 .quest.claimed .qtitle { color: var(--color-text-tertiary); }
 .quest-note { margin: 10px 0 0; }
 
-/* 준비(레디) */
-.ready-box { padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; }
-.ready-box.all { border-color: var(--color-success-border); background: var(--color-success-bg); }
-.ready-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+/* 준비(레디) 막대: 화면 아래에 떠 있음 */
+.ready-bar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  background: var(--color-bg-elevated, #fff); border-top: 1px solid var(--color-border);
+  box-shadow: 0 -6px 16px rgba(0, 0, 0, .08);
+}
+.ready-bar.all { border-top-color: var(--color-success-border); background: var(--color-success-bg); }
+.ready-bar-inner { max-width: 760px; margin: 0 auto; padding-block: 12px; display: flex; align-items: center; gap: 12px 16px; flex-wrap: wrap; }
+.ready-status { flex: 1; min-width: 160px; display: flex; flex-direction: column; }
 .ready-count { font-weight: 600; font-size: 16px; font-variant-numeric: tabular-nums; }
-.ready-mine { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-.ready-btn { min-width: 200px; }
-.ready-auto { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
+.ready-wait { font-size: 13px; color: var(--color-text-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ready-bar.all .ready-wait { color: var(--color-success-text); }
+.ready-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.ready-btn, .ready-start { min-width: 150px; }
+.ready-start:disabled { cursor: not-allowed; }
+.ready-auto { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; font-size: 14px; }
 .ready-auto input { width: 16px; height: 16px; accent-color: var(--color-primary); }
-#btn-start:disabled, #btn-again:disabled { cursor: not-allowed; }
+body.has-ready-bar { padding-bottom: 96px; }
+@media (max-width: 480px) { .ready-actions { width: 100%; } .ready-btn, .ready-start { flex: 1; } body.has-ready-bar { padding-bottom: 140px; } }

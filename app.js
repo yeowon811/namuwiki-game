@@ -943,22 +943,29 @@ function renderReady() {
   const need = mustReady();
   const waiting = notReady();
   const done = need.length - waiting.length;
-  $$('.ready-box').forEach((box) => {
-    box.classList.toggle('hidden', need.length === 0 && host); // 혼자 있는 방장은 필요 없음
-    box.querySelector('.ready-count').textContent = need.length ? `준비 ${done} / ${need.length}명` : '함께할 사람을 기다리는 중';
-    box.querySelector('.ready-wait').textContent = waiting.length ? `아직: ${waiting.map((p) => p.name).join(', ')}` : need.length ? '모두 준비 완료!' : '';
-    box.classList.toggle('all', need.length > 0 && !waiting.length);
-    const mine = box.querySelector('.ready-mine');
-    mine.classList.toggle('hidden', host);
-    const btn = box.querySelector('.ready-btn');
-    const on = !!my?.ready;
-    btn.textContent = on ? '✓ 준비 완료 (누르면 취소)' : '준비하기';
-    btn.classList.toggle('btn-primary', !on);
-    btn.classList.toggle('btn-success', on);
-    box.querySelector('.ready-auto-input').checked = autoReady();
-  });
-  // 방장: 모두 준비해야 시작 가능
   const ok = allReady();
+  const bar = $('#ready-bar');
+  showReadyBar(true);
+  bar.querySelector('.ready-count').textContent = need.length ? `준비 ${done} / ${need.length}명` : '함께할 사람을 기다리는 중';
+  bar.querySelector('.ready-wait').textContent = waiting.length ? `아직: ${waiting.map((p) => p.name).join(', ')}` : need.length ? '모두 준비 완료!' : '';
+  bar.classList.toggle('all', need.length > 0 && ok);
+  // 참가자: 준비 버튼 + 자동 준비
+  const btn = bar.querySelector('.ready-btn');
+  const on = !!my?.ready;
+  btn.classList.toggle('hidden', host);
+  bar.querySelector('.ready-auto').classList.toggle('hidden', host);
+  btn.textContent = on ? '✓ 준비 완료' : '준비하기';
+  btn.title = on ? '한 번 더 누르면 준비를 취소해요' : '';
+  btn.classList.toggle('btn-primary', !on);
+  btn.classList.toggle('btn-success', on);
+  bar.querySelector('.ready-auto-input').checked = autoReady();
+  // 방장: 시작 버튼 (모두 준비해야 켜짐)
+  const start = bar.querySelector('.ready-start');
+  start.classList.toggle('hidden', !host);
+  start.innerHTML = ph === 'lobby' ? `${icon('play')}게임 시작` : `${icon('redo')}${room.daily ? '다시 도전' : '다음 판'}`;
+  start.disabled = !ok && !room.daily;
+  start.title = start.disabled ? '모두 준비해야 시작할 수 있어요.' : '';
+  // 방장: 모두 준비해야 시작 가능
   for (const id of ['#btn-start', '#btn-again']) {
     const b = $(id);
     if (!b) continue;
@@ -966,7 +973,12 @@ function renderReady() {
     b.title = b.disabled ? '모두 준비해야 시작할 수 있어요.' : '';
   }
 }
+function showReadyBar(on) {
+  $('#ready-bar').classList.toggle('hidden', !on);
+  document.body.classList.toggle('has-ready-bar', on);
+}
 $$('.ready-btn').forEach((b) => (b.onclick = () => setReady(!me()?.ready)));
+$('#ready-bar .ready-start').onclick = () => startRound();
 $$('.ready-auto-input').forEach((c) => (c.onchange = (e) => {
   store.set(AUTO_READY_KEY, e.target.checked ? '1' : '0');
   if (e.target.checked && me() && !me().ready) setReady(true);
@@ -1330,6 +1342,7 @@ function render() {
   lastPhase = ph;
   $('#ext-installed').classList.toggle('hidden', !ext.ready);
   if (ph !== 'lobby') plaza?.pause();
+  if (ph !== 'lobby' && ph !== 'results') showReadyBar(false);
   if (ph === 'home') { syncExt(); return showHome(); }
   unwatchLobbies();
   $$('.btn-destroy').forEach((b) => b.classList.toggle('hidden', !isHost()));
