@@ -114,7 +114,30 @@ async function handle(msg, sender) {
       return {};
     }
 
+    case 'CHAT': {
+      // 채팅 (이번 판 최근 5개): 같은 판일 때만 받아서 레이스 탭에 전달
+      if (!race || race.code !== msg.code || race.round !== msg.round) return {};
+      race.chat = Array.isArray(msg.chat) ? msg.chat.slice(-5).map((m) => ({
+        id: String(m.id || ''), name: String(m.name || '').slice(0, 16), text: String(m.text || '').slice(0, 100), t: Number(m.t) || 0, me: !!m.me,
+      })) : [];
+      await save(race);
+      notifyRaceTab(race);
+      return {};
+    }
+
     // ----- 나무위키 탭에서 -----
+    case 'CHAT_SEND': {
+      // 레이스 탭의 채팅창에서 보낸 메시지 → 게임 탭이 Firebase에 올림
+      if (!race || tabId !== race.tabId) return { ok: false };
+      const text = String(msg.text || '').replace(/\s+/g, ' ').trim().slice(0, 100);
+      if (!text || race.gameTabId == null) return { ok: false };
+      try {
+        await chrome.tabs.sendMessage(race.gameTabId, { type: 'CHAT_SEND', text });
+        return { ok: true };
+      } catch {
+        return { ok: false };
+      }
+    }
     case 'NAMU_HELLO': {
       if (!race || tabId !== race.tabId) return { race: null };
       return { race: summary(race) };

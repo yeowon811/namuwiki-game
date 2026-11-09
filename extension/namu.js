@@ -124,6 +124,8 @@
   let host, root, timer, toastTimer;
   let seenFinished = null; // 이미 알림을 띄운 도착자
   let boardOpen = sessionStorage.getItem('nr-board-open') !== '0';
+  let chatOpen = sessionStorage.getItem('nr-chat-open') !== '0';
+  let chatPopTimer;
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const fmt = (ms) => {
     const s = Math.max(0, Math.floor(ms / 1000));
@@ -140,7 +142,7 @@
       <style>
         /* Ant Design 5 토큰 (게임 페이지와 같은 디자인) */
         :host{all:initial}
-        .wrap,.toast{
+        .wrap,.toast,.cpop{
           --primary:#1677ff;--primary-bg:#e6f4ff;--primary-border:#91caff;
           --success:#52c41a;--success-text:#389e0d;--error:#ff4d4f;--error-bg:#fff2f0;--error-border:#ffccc7;--gold:#faad14;
           --text:rgba(0,0,0,.88);--text2:rgba(0,0,0,.65);--text3:rgba(0,0,0,.45);
@@ -150,7 +152,7 @@
           color:var(--text);
         }
         @media (prefers-color-scheme: dark){
-          .wrap,.toast{--primary:#1668dc;--primary-bg:#111a2c;--primary-border:#15325b;--success:#49aa19;--success-text:#6abe39;
+          .wrap,.toast,.cpop{--primary:#1668dc;--primary-bg:#111a2c;--primary-border:#15325b;--success:#49aa19;--success-text:#6abe39;
             --error:#dc4446;--error-bg:#2c1618;--error-border:#5b2526;--gold:#d89614;
             --text:rgba(255,255,255,.85);--text2:rgba(255,255,255,.65);--text3:rgba(255,255,255,.45);
             --border:#303030;--fill:rgba(255,255,255,.08);--bg:#1f1f1f}
@@ -180,6 +182,34 @@
         .warn{margin-top:8px;font-size:12px;padding:0 7px;line-height:20px;border-radius:4px;display:inline-block;
           color:var(--error);background:var(--error-bg);border:1px solid var(--error-border)}
         .board{border-top:1px solid var(--border)}
+        /* 채팅 (상자 맨 위) */
+        .chat{border-bottom:1px solid var(--border)}
+        .chead{display:flex;align-items:center;gap:6px;padding:8px 16px;cursor:pointer;user-select:none;font-weight:600}
+        .chead:hover{background:var(--fill)}
+        .chead .cprev{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:400;font-size:12px;color:var(--text2)}
+        .chead .ctog{color:var(--text3);font-weight:400;font-size:12px;margin-left:auto;flex:none}
+        .badge{flex:none;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--error);color:#fff;font-size:11px;font-weight:600;
+          line-height:18px;text-align:center}
+        .chat.alert .chead{animation:blink 1s ease-in-out 3}
+        @keyframes blink{50%{background:var(--primary-bg)}}
+        .clog{list-style:none;margin:0;padding:2px 16px 0;max-height:180px;overflow:auto}
+        .clog li{font-size:13px;line-height:1.45;padding:3px 0;word-break:break-word;border:0;display:block}
+        .clog li b{font-weight:600;margin-right:4px}
+        .clog li.me b{color:var(--primary)}
+        .clog .empty{color:var(--text3);font-size:12px;padding:6px 0}
+        .cform{display:flex;gap:6px;padding:8px 16px 10px}
+        .cform input{flex:1;min-width:0;height:28px;padding:0 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);
+          font:inherit;font-size:13px;outline:none}
+        .cform input:focus{border-color:var(--primary);box-shadow:0 0 0 2px var(--primary-bg)}
+        .cform button{height:28px;padding:0 10px;border:0;border-radius:6px;background:var(--primary);color:#fff;font:inherit;font-size:12px;cursor:pointer}
+        .cform button:disabled{opacity:.5;cursor:default}
+        /* 접혀 있을 때 새 메시지 알림 (상자 위에 잠깐) */
+        .cpop{position:fixed;right:16px;width:272px;box-sizing:border-box;padding:10px 14px;border-radius:8px;background:var(--bg);box-shadow:var(--shadow);
+          pointer-events:auto;cursor:pointer;font-size:13px;line-height:1.45;word-break:break-word;border-left:3px solid var(--primary);
+          opacity:0;transform:translateY(8px);transition:opacity .2s,transform .2s}
+        .cpop.show{opacity:1;transform:none}
+        .cpop[hidden]{display:none}
+        .cpop .ct{font-size:12px;color:var(--text3);margin-bottom:2px}
         .bhead{display:flex;justify-content:space-between;align-items:center;padding:10px 16px;cursor:pointer;user-select:none;font-weight:600}
         .bhead:hover{background:var(--fill)}
         .bhead .tog{color:var(--text3);font-weight:400;font-size:12px}
@@ -229,7 +259,15 @@
         <button class="eb">닫기</button>
       </div></div>
       <div class="toast"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="currentColor"/><path class="mark" d="M8 12.2l2.8 2.8L16 9.5" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="msg"></span></div>
+      <div class="cpop" hidden><div class="ct">💬 새 메시지 · 눌러서 보기</div><div class="cm"></div></div>
       <div class="wrap">
+        <div class="chat">
+          <div class="chead"><span>💬 채팅</span><span class="badge" hidden></span><span class="cprev"></span><span class="ctog"></span></div>
+          <div class="cbody">
+            <ol class="clog"></ol>
+            <div class="cform"><input type="text" maxlength="100" placeholder="메시지 입력 후 Enter" aria-label="채팅 메시지"><button type="button">보내기</button></div>
+          </div>
+        </div>
         <div class="box">
           <div class="k"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/></svg><span class="klabel">목표 문서</span></div>
           <div class="target"></div>
@@ -272,6 +310,35 @@
       if (res?.race) setRace(res.race);
       if (res?.hint) showHint(res.hint.target, res.hint.text);
     });
+    // 채팅: 접기/펼치기, 보내기
+    const toggleChat = (open = !chatOpen) => {
+      chatOpen = open;
+      try { sessionStorage.setItem('nr-chat-open', chatOpen ? '1' : '0'); } catch {}
+      hideChatPop();
+      renderChat();
+      if (chatOpen) root.querySelector('.cform input').focus();
+    };
+    root.querySelector('.chead').addEventListener('click', () => toggleChat());
+    root.querySelector('.cpop').addEventListener('click', () => toggleChat(true));
+    const input = root.querySelector('.cform input');
+    const sendBtn = root.querySelector('.cform button');
+    const sendChat = async () => {
+      const text = input.value.replace(/\s+/g, ' ').trim();
+      if (!text || sendBtn.disabled) return;
+      sendBtn.disabled = true;
+      const res = await send({ type: 'CHAT_SEND', text });
+      sendBtn.disabled = false;
+      if (res?.ok) input.value = '';
+      else toast('채팅을 보내지 못했어요. 게임 탭이 열려 있는지 확인해 주세요.', 3500, 'warning');
+    };
+    sendBtn.addEventListener('click', sendChat);
+    // 입력 중인 글자가 나무위키 단축키로 넘어가지 않게 막음
+    for (const type of ['keydown', 'keypress', 'keyup']) {
+      input.addEventListener(type, (e) => {
+        e.stopPropagation();
+        if (type === 'keydown' && e.key === 'Enter' && !e.isComposing) { e.preventDefault(); sendChat(); }
+      });
+    }
     root.querySelector('.bhead').addEventListener('click', () => {
       boardOpen = !boardOpen;
       try { sessionStorage.setItem('nr-board-open', boardOpen ? '1' : '0'); } catch {}
@@ -316,7 +383,7 @@
     if (el.hidden) return;
     const done = board.players.filter((p) => p.status === 'finished').length;
     root.querySelector('.tog').textContent = `${done}/${board.players.length} 도착 · ${boardOpen ? '접기' : '펼치기'}`;
-    const ol = root.querySelector('ol');
+    const ol = root.querySelector('.board ol');
     ol.hidden = !boardOpen;
     let rank = 0;
     ol.innerHTML = board.players.map((p) => {
@@ -342,6 +409,68 @@
     }).join('');
   }
 
+  // 채팅: 이번 판 최근 5개. 접혀 있을 때 남이 보낸 새 메시지가 오면 숫자 + 알림
+  // 읽은 시각·알린 시각은 문서를 옮겨도 남도록 sessionStorage에 (판마다 따로)
+  function chatMark(name) {
+    try {
+      const v = JSON.parse(sessionStorage.getItem('nr-chat-' + name) || 'null');
+      return v && v.key === `${race.code}/${race.round}` ? v.t : 0;
+    } catch { return 0; }
+  }
+  function setChatMark(name, t) {
+    try { sessionStorage.setItem('nr-chat-' + name, JSON.stringify({ key: `${race.code}/${race.round}`, t })); } catch {}
+  }
+  function hideChatPop() {
+    if (!root) return;
+    const pop = root.querySelector('.cpop');
+    pop.classList.remove('show');
+    clearTimeout(chatPopTimer);
+    chatPopTimer = setTimeout(() => { pop.hidden = true; }, 200);
+  }
+  function renderChat() {
+    if (!root || !race) return;
+    const msgs = race.chat || [];
+    const chat = root.querySelector('.chat');
+    const log = root.querySelector('.clog');
+    root.querySelector('.cbody').hidden = !chatOpen;
+    root.querySelector('.ctog').textContent = chatOpen ? '접기' : '펼치기';
+    log.innerHTML = msgs.length
+      ? msgs.map((m) => `<li class="${m.me ? 'me' : ''}"><b>${esc(m.name)}${m.me ? ' (나)' : ''}</b>${esc(m.text)}</li>`).join('')
+      : '<li class="empty">아직 대화가 없어요. 먼저 말을 걸어 보세요!</li>';
+    log.scrollTop = log.scrollHeight;
+    const lastT = msgs.reduce((a, m) => Math.max(a, m.t || 0), 0);
+    const badge = root.querySelector('.badge');
+    const prev = root.querySelector('.cprev');
+    if (chatOpen) {
+      if (lastT > chatMark('seen')) setChatMark('seen', lastT);
+      badge.hidden = true;
+      prev.textContent = '';
+      chat.classList.remove('alert');
+      return;
+    }
+    const seen = chatMark('seen');
+    const unread = msgs.filter((m) => !m.me && (m.t || 0) > seen);
+    badge.hidden = !unread.length;
+    badge.textContent = unread.length;
+    const latest = unread[unread.length - 1];
+    prev.textContent = latest ? `${latest.name}: ${latest.text}` : '';
+    // 아직 알리지 않은 새 메시지면 알림
+    if (latest && latest.t > chatMark('alerted')) {
+      setChatMark('alerted', latest.t);
+      const pop = root.querySelector('.cpop');
+      pop.querySelector('.cm').innerHTML = `<b>${esc(latest.name)}</b> ${esc(latest.text)}`;
+      pop.style.bottom = `${root.querySelector('.wrap').offsetHeight + 16 + 8}px`;
+      pop.hidden = false;
+      void pop.offsetWidth;
+      pop.classList.add('show');
+      chat.classList.remove('alert');
+      void chat.offsetWidth;
+      chat.classList.add('alert');
+      clearTimeout(chatPopTimer);
+      chatPopTimer = setTimeout(hideChatPop, 6000);
+    }
+  }
+
   function legDots(p, total) {
     const leg = p.status === 'finished' ? total : p.leg || 0;
     return `<span class="legs">${Array.from({ length: total }, (_, i) => `<i class="${i < leg ? 'on' : i === leg && p.status === 'playing' ? 'cur' : ''}"></i>`).join('')}</span>`;
@@ -365,6 +494,7 @@
     root.querySelector('.es').textContent = (sub ? sub + ' · ' : '') + '게임 탭에서 결과를 확인하세요.';
     root.querySelector('.end').hidden = false;
     root.querySelector('.wrap').hidden = true;
+    root.querySelector('.cpop').hidden = true;
     root.querySelector('.toast').classList.remove('show');
   }
 
@@ -454,6 +584,7 @@
     warn.textContent = [race.violations ? `규칙 위반 ${race.violations}/${race.maxStrikes || 2}회` : '', race.away ? `다른 탭 ${race.away}회` : ''].filter(Boolean).join(' · ');
     updateTime();
     renderBoard();
+    renderChat();
     notifyArrivals();
   }
 

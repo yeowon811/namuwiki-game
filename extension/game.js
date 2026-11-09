@@ -20,7 +20,7 @@
     if (e.source !== window || e.data?.source !== 'nr-page') return;
     const { source, ...msg } = e.data;
     if (msg.type === 'PING') return hello();
-    if (!['RACE', 'OPEN_START', 'STOP', 'BOARD'].includes(msg.type)) return;
+    if (!['RACE', 'OPEN_START', 'STOP', 'BOARD', 'CHAT'].includes(msg.type)) return;
     try {
       const res = await chrome.runtime.sendMessage(msg);
       if (res && 'race' in res) post('STATE', { race: res.race });
@@ -31,6 +31,7 @@
 
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.type === 'STATE') post('STATE', { race: msg.race });
+    if (msg.type === 'CHAT_SEND') post('CHAT_SEND', { text: msg.text }); // 나무위키 탭 채팅창에서 보낸 메시지
   });
 
   hello();

@@ -62,6 +62,9 @@ window.addEventListener('message', (e) => {
   } else if (msg.type === 'STATE') {
     ext.race = msg.race;
     onExtState();
+  } else if (msg.type === 'CHAT_SEND') {
+    // 나무위키 탭의 채팅창에서 보낸 메시지 (지금 레이스 중인 방에만)
+    if (room && extRaceIsCurrent()) sendChat(msg.text);
   } else if (msg.type === 'ERROR') {
     console.warn('[확장 프로그램]', msg.message);
   }
@@ -100,6 +103,7 @@ function syncExt() {
     if (!inRound || me()?.status !== 'finished') {
       ext.sentKey = null;
       ext.boardSent = null;
+      ext.chatSent = null;
       toExt('STOP', { ended: !inRound, board: makeBoard() });
       return;
     }
@@ -111,6 +115,16 @@ function syncExt() {
     if (ext.boardSent !== json) {
       ext.boardSent = json;
       toExt('BOARD', { code: room.code, round: room.round, board });
+    }
+    // 나무위키 탭 채팅창: 이번 판이 시작된 뒤의 대화 중 최근 5개 (시작할 땐 비어 있음)
+    const chat = chatList()
+      .filter((m) => typeof m.t === 'number' && m.t >= (room.startAt || 0))
+      .slice(-5)
+      .map((m) => ({ id: m.id, name: room.players.find((p) => p.id === m.pid)?.name || m.name || '', text: m.text, t: m.t, me: m.pid === playerId }));
+    const chatJson = JSON.stringify(chat);
+    if (ext.chatSent !== chatJson) {
+      ext.chatSent = chatJson;
+      toExt('CHAT', { code: room.code, round: room.round, chat });
     }
   }
 }
@@ -869,11 +883,14 @@ let lastChatAt = 0;
 $('#chat-form').addEventListener('submit', (e) => {
   e.preventDefault();
   const input = $('#chat-input');
-  const text = input.value.replace(/\s+/g, ' ').trim().slice(0, 100);
-  if (!text || !room || !me()) return;
-  if (Date.now() - lastChatAt < 600) return; // 도배 방지
+  if (sendChat(input.value)) input.value = '';
+});
+// 채팅 보내기 (대기실 채팅창, 나무위키 탭의 채팅창 공용). 보냈으면 true
+function sendChat(raw) {
+  const text = String(raw || '').replace(/\s+/g, ' ').trim().slice(0, 100);
+  if (!text || !room || !me()) return false;
+  if (Date.now() - lastChatAt < 600) return false; // 도배 방지
   lastChatAt = Date.now();
-  input.value = '';
   push(roomRef(room.code, 'chat'), { pid: playerId, name: me().name, e: charOf(me()).e, text, t: serverTimestamp() });
   // 오래된 대화는 정리 (최근 60개만 남김)
   const all = chatList();
@@ -882,7 +899,8 @@ $('#chat-form').addEventListener('submit', (e) => {
     for (const m of all.slice(0, all.length - 60)) old[`chat/${m.id}`] = null;
     update(roomRef(room.code), old);
   }
-});
+  return true;
+}
 
 // ---------- 게임 이벤트 ----------
 $('#btn-giveup').onclick = () => {

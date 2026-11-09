@@ -187,5 +187,6 @@ export function summary(race) {
     finishT: race.finishT,
     hasTab: race.tabId != null,
     board: race.board || null, // 게임 페이지가 보내준 실시간 순위
+    chat: race.chat || [], // 이번 판 채팅 (최근 5개)
   };
 }
