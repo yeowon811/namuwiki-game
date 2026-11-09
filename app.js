@@ -1741,14 +1741,14 @@ const QUEST_HARD = [
   { id: 'games5', title: '오늘 5판 하기', target: 5, amt: 50 },
   { id: 'win3', title: '1등 3번 하기', target: 3, amt: 50, sub: '3명 이상인 방' },
   { id: 'dailytop3', title: '오늘의 챔피언 3등 안에 들기', target: 1, amt: 50 },
-  { id: 'modes3', title: '3가지 모드 모두 해 보기', target: 3, amt: 50, sub: '타임어택 · 최소 클릭 · 릴레이' },
 ];
-const QUEST_PAIRS = [[0, 1], [0, 2], [0, 3], [1, 2], [1, 3], [2, 3]];
+const QUEST_PAIRS = [[0, 1], [0, 2], [0, 3], [1, 2], [1, 3], [2, 3]]; // 쉬움 4개 중 2개
+const QUEST_PAIRS_H = [[0, 1], [0, 2], [1, 2]]; // 어려움 3개 중 2개
 const QUEST_WIN_MIN = 3; // 1등 퀘스트는 이 인원 이상인 방에서만
 const questDay = () => Math.floor((now() + 9 * 3600000) / 86400000); // 한국 시간 기준 날짜 번호
 function todaysQuests(day = questDay()) {
   const e = QUEST_PAIRS[day % 6];
-  const h = QUEST_PAIRS[Math.floor(day / 6) % 6];
+  const h = QUEST_PAIRS_H[Math.floor(day / 6) % 3];
   return [QUEST_EASY[e[0]], QUEST_EASY[e[1]], { ...QUEST_HARD[h[0]], hard: true }, { ...QUEST_HARD[h[1]], hard: true }];
 }
 // 오늘 진행 상황 (users/{uid}/quest, 날짜가 바뀌면 처음부터)
@@ -1758,7 +1758,6 @@ function questValue(q, prog) {
     case 'games3': case 'games5': return prog.games || 0;
     case 'win1': case 'win3': return prog.wins || 0;
     case 'relay1': return prog.relay || 0;
-    case 'modes3': return Object.keys(prog.modes || {}).length;
     case 'dailytry': return prog.daily ? 1 : 0;
     case 'dailytop3': {
       const i = dailyRanking().findIndex((r) => r.id === playerId);
