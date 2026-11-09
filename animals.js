@@ -21,17 +21,20 @@ export const ANIMALS = [
 ];
 
 // 액세서리 부위: 부위마다 하나씩 착용
-export const SLOTS = [
+// off: true인 부위는 잠시 숨김 (상점·고르기 목록에 안 나오고, 이미 착용한 것도 안 보임. 산 기록은 그대로 남음)
+//   → 옷 입은 그림이 준비되면 off를 지워서 다시 켜요.
+const ALL_SLOTS = [
   { key: 'head', label: '모자' },
-  { key: 'eyes', label: '안경' },
-  { key: 'neck', label: '목' },
-  { key: 'body', label: '옷' },
-  { key: 'feet', label: '신발' },
+  { key: 'eyes', label: '안경', off: true },
+  { key: 'neck', label: '목', off: true },
+  { key: 'body', label: '옷', off: true },
+  { key: 'feet', label: '신발', off: true },
   { key: 'back', label: '가방' },
 ];
+export const SLOTS = ALL_SLOTS.filter((s) => !s.off);
 // size: 그 부위 기본 크기 대비 배율 · ay: 기준점에 맞출 그림 속 높이(%)
 // brow: 모자 아랫단을 머리 꼭대기와 눈 사이 어디에 둘지 (0 = 머리 꼭대기, 1 = 눈)
-export const ACCESSORIES = [
+const ALL_ACCESSORIES = [
   { id: 'crown', slot: 'head', label: '왕관', emoji: '👑', size: 0.72 },
   { id: 'beanie', slot: 'head', label: '비니', emoji: '🧶', size: 1.05, ay: 97, brow: 0.5 },
   { id: 'cap', slot: 'head', label: '야구 모자', emoji: '🧢', size: 1.15, ay: 95, brow: 0.4 },
@@ -51,6 +54,8 @@ export const ACCESSORIES = [
 ];
 
 const BY_ID = new Map(ANIMALS.map((a) => [a.id, a]));
+// 지금 켜져 있는 부위의 액세서리만
+export const ACCESSORIES = ALL_ACCESSORIES.filter((a) => SLOTS.some((s) => s.key === a.slot));
 const ACC_BY_ID = new Map(ACCESSORIES.map((a) => [a.id, a]));
 export const animalOf = (id) => BY_ID.get(id) || null;
 // 옆으로 움직일 때 쓰는 그림 번호: 보통은 1·2번을 번갈아, runOnly면 2번만
