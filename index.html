@@ -6,7 +6,7 @@
   <title>나무위키 레이스</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" />
-  <link rel="stylesheet" href="style.css?v=24" />
+  <link rel="stylesheet" href="style.css?v=25" />
 </head>
 <body>
   <!-- 아이콘 모음 (Ant Design의 Outlined 스타일을 따라 그린 선 아이콘) -->
@@ -158,6 +158,18 @@
           <ol id="daily-top" class="daily-top"></ol>
           <p id="daily-mine" class="daily-mine"></p>
           <button id="btn-daily" class="btn btn-primary btn-lg btn-block"><svg class="ic"><use href="#i-play"/></svg>오늘의 문제 도전하기</button>
+        </div>
+      </div>
+
+      <!-- 오늘의 퀘스트: 매일 자정(한국 시간)에 바뀌는 4개 (쉬움 30P ×2, 어려움 50P ×2) -->
+      <div class="card" id="quest-card">
+        <div class="card-head">
+          <span class="card-title"><svg class="ic"><use href="#i-check"/></svg>오늘의 퀘스트</span>
+          <span id="quest-sum" class="text-tertiary"></span>
+        </div>
+        <div class="card-body">
+          <ul id="quest-list" class="quest-list"></ul>
+          <p class="text-tertiary small quest-note">매일 자정(한국 시간)에 새 퀘스트로 바뀌어요. 판 수는 끝까지 참가한 판만, 1등은 3명 이상인 방에서만 세요.</p>
         </div>
       </div>
 
@@ -467,6 +479,6 @@
   <div id="toast" class="message" role="status"></div>
 
   <!-- 코드를 바꾸면 ?v= 숫자를 올려서 브라우저 캐시에 남은 옛 파일을 쓰지 않게 함 -->
-  <script type="module" src="app.js?v=42"></script>
+  <script type="module" src="app.js?v=43"></script>
 </body>
 </html>

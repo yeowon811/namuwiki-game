@@ -369,6 +369,7 @@ function enterRoom(code) {
     announceArrivals();
     submitDailyIfDone();
     claimRoundRewards();
+    recordQuestRound();
     render();
     maintain();
   });
@@ -777,6 +778,7 @@ function championFace(r) {
   return '<span class="face"></span>';
 }
 function renderDaily() {
+  renderQuests();
   const pz = daily.puzzle;
   $('#btn-daily').disabled = !pz;
   const lock = `<span class="lock">${icon('lock')}공개 전</span>`;
@@ -1615,6 +1617,7 @@ function showHome() {
   if (shopOpen) { show('shop'); renderShop(); return; }
   show('home');
   renderProfile();
+  renderQuests();
   watchLobbies();
   watchDaily();
   payDailyChampions();
@@ -1722,6 +1725,131 @@ async function claimRoundRewards() {
   } catch (e) {
     console.warn('[포인트]', e.message);
   }
+}
+
+
+// ---------- 오늘의 퀘스트 ----------
+// 매일 자정(한국 시간)에 쉬움 2개(30P) + 어려움 2개(50P)가 정해짐 (모두 같은 퀘스트)
+// 고르는 방법은 database.rules.json의 lastQuest 규칙과 똑같아야 해요 (서버가 오늘의 퀘스트인지 확인)
+const QUEST_EASY = [
+  { id: 'games3', title: '오늘 3판 하기', target: 3, amt: 30 },
+  { id: 'win1', title: '1등 하기', target: 1, amt: 30, sub: '3명 이상인 방' },
+  { id: 'dailytry', title: '오늘의 문제 도착하기', target: 1, amt: 30, sub: '오늘의 챔피언' },
+  { id: 'relay1', title: '릴레이 완주하기', target: 1, amt: 30 },
+];
+const QUEST_HARD = [
+  { id: 'games5', title: '오늘 5판 하기', target: 5, amt: 50 },
+  { id: 'win3', title: '1등 3번 하기', target: 3, amt: 50, sub: '3명 이상인 방' },
+  { id: 'dailytop3', title: '오늘의 챔피언 3등 안에 들기', target: 1, amt: 50 },
+  { id: 'modes3', title: '3가지 모드 모두 해 보기', target: 3, amt: 50, sub: '타임어택 · 최소 클릭 · 릴레이' },
+];
+const QUEST_PAIRS = [[0, 1], [0, 2], [0, 3], [1, 2], [1, 3], [2, 3]];
+const QUEST_WIN_MIN = 3; // 1등 퀘스트는 이 인원 이상인 방에서만
+const questDay = () => Math.floor((now() + 9 * 3600000) / 86400000); // 한국 시간 기준 날짜 번호
+function todaysQuests(day = questDay()) {
+  const e = QUEST_PAIRS[day % 6];
+  const h = QUEST_PAIRS[Math.floor(day / 6) % 6];
+  return [QUEST_EASY[e[0]], QUEST_EASY[e[1]], { ...QUEST_HARD[h[0]], hard: true }, { ...QUEST_HARD[h[1]], hard: true }];
+}
+// 오늘 진행 상황 (users/{uid}/quest, 날짜가 바뀌면 처음부터)
+const questProg = (day = questDay()) => (profile?.quest?.day === day ? profile.quest : { day });
+function questValue(q, prog) {
+  switch (q.id) {
+    case 'games3': case 'games5': return prog.games || 0;
+    case 'win1': case 'win3': return prog.wins || 0;
+    case 'relay1': return prog.relay || 0;
+    case 'modes3': return Object.keys(prog.modes || {}).length;
+    case 'dailytry': return prog.daily ? 1 : 0;
+    case 'dailytop3': {
+      const i = dailyRanking().findIndex((r) => r.id === playerId);
+      return i >= 0 && i < 3 ? 1 : 0;
+    }
+    default: return 0;
+  }
+}
+const questClaimed = (q, day = questDay()) => profile?.questClaims?.[q.id] === day;
+
+function renderQuests() {
+  const list = $('#quest-list');
+  if (!list || !profile) return;
+  const day = questDay();
+  const prog = questProg(day);
+  const qs = todaysQuests(day);
+  let got = 0;
+  list.innerHTML = qs.map((q) => {
+    const v = Math.min(q.target, questValue(q, prog));
+    const done = v >= q.target;
+    const claimed = questClaimed(q, day);
+    if (claimed) got += q.amt;
+    const act = claimed ? '<span class="tag tag-success">받음</span>'
+      : `<button class="btn btn-sm ${done ? 'btn-primary' : ''}" data-quest="${q.id}" ${done ? '' : 'disabled'}>${done ? `${q.amt}P 받기` : `${q.amt}P`}</button>`;
+    return `<li class="quest ${claimed ? 'claimed' : done ? 'ready' : ''}">`
+      + `<span class="tag ${q.hard ? 'tag-warning' : 'tag-blue'} qlv">${q.hard ? '어려움' : '쉬움'}</span>`
+      + `<div class="qinfo"><div class="qtitle">${q.title}${q.sub ? `<span class="qsub">${q.sub}</span>` : ''}</div>`
+      + `<div class="qbar" role="progressbar" aria-valuemin="0" aria-valuemax="${q.target}" aria-valuenow="${v}"><i style="width:${(v / q.target) * 100}%"></i></div>`
+      + `<div class="qnum">${v} / ${q.target}</div></div>`
+      + `<div class="qact">${act}</div></li>`;
+  }).join('');
+  const total = qs.reduce((s, q) => s + q.amt, 0);
+  $('#quest-sum').textContent = `${got} / ${total}P`;
+}
+$('#quest-list').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-quest]');
+  if (b && !b.disabled) guarded(b, () => claimQuest(b.dataset.quest));
+});
+async function claimQuest(id) {
+  const uid = authUser?.uid;
+  if (!uid || !profile) return;
+  const day = questDay();
+  const q = todaysQuests(day).find((x) => x.id === id);
+  if (!q || questClaimed(q, day) || questValue(q, questProg(day)) < q.target) return;
+  try {
+    await update(ref(db), {
+      [`users/${uid}/points`]: (profile.points || 0) + q.amt,
+      [`users/${uid}/lastQuest`]: { id: q.id, day, amt: q.amt },
+      [`users/${uid}/questClaims/${q.id}`]: day,
+    });
+    toast(`퀘스트 완료! +${q.amt} 포인트`, 'success');
+  } catch (e) {
+    console.warn('[퀘스트]', e.message);
+    toast('포인트를 받지 못했어요. 새로고침한 뒤 다시 시도해주세요.', 'error');
+  }
+}
+
+// 판이 끝나면 퀘스트 진행 기록 (끝까지 참가한 판만, 한 판에 한 번)
+let questRoundKey = null;
+function recordQuestRound() {
+  if (!room || room.state !== 'results' || !authUser) return;
+  const key = `${room.rid || room.code}/${room.round}`;
+  if (questRoundKey === key) return;
+  const my = me();
+  if (!my || !my.status || my.status === 'waiting') return;
+  questRoundKey = key;
+  if (my.status === 'gaveup') return; // 포기·실격한 판은 세지 않음
+  const participants = room.players.filter((p) => p.status && p.status !== 'waiting').length;
+  const finished = ranking(room).filter((p) => p.status === 'finished');
+  const won = finished[0]?.id === playerId && participants >= QUEST_WIN_MIN;
+  const arrived = my.status === 'finished';
+  const day = questDay();
+  const before = todaysQuests(day).filter((q) => questValue(q, questProg(day)) >= q.target).map((q) => q.id);
+  runTransaction(ref(db, `users/${authUser.uid}/quest`), (cur) => {
+    const p = cur?.day === day ? cur : { day };
+    if (p.last === key) return undefined; // 이미 센 판 (다른 탭 등)
+    return {
+      ...p,
+      last: key,
+      games: (p.games || 0) + 1,
+      wins: (p.wins || 0) + (won ? 1 : 0),
+      relay: (p.relay || 0) + (room.mode === 'relay' && arrived ? 1 : 0),
+      modes: room.daily ? (p.modes || null) : { ...(p.modes || {}), [room.mode]: true },
+      daily: p.daily || (!!room.daily && arrived),
+    };
+  }).then((res) => {
+    if (!res.committed) return;
+    const prog = res.snapshot.val() || { day };
+    const fresh = todaysQuests(day).filter((q) => !before.includes(q.id) && !questClaimed(q, day) && questValue(q, prog) >= q.target);
+    if (fresh.length) setTimeout(() => toast(`퀘스트 달성: ${fresh.map((q) => q.title).join(', ')} · 시작 화면에서 포인트를 받으세요!`, 'success'), 2500);
+  }).catch((e) => console.warn('[퀘스트]', e.message));
 }
 
 // ---------- 오늘의 챔피언 포인트: 하루가 지나면 그날 1·2·3등에게 지급 ----------
