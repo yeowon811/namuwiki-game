@@ -185,8 +185,8 @@
         .bhead .tog{color:var(--text3);font-weight:400;font-size:12px}
         ol{list-style:none;margin:0;padding:0 16px 8px;max-height:220px;overflow:auto}
         li{display:flex;gap:8px;align-items:center;padding:6px 0;font-size:13px;border-top:1px solid var(--border)}
-        li .n{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-        li .s{font-variant-numeric:tabular-nums;white-space:nowrap;font-size:12px;padding:0 7px;line-height:20px;border-radius:4px;
+        li .n{flex:1;min-width:0;overflow-wrap:anywhere;word-break:break-all;line-height:1.4}
+        li .s{flex:none;font-variant-numeric:tabular-nums;white-space:nowrap;font-size:12px;padding:0 7px;line-height:20px;border-radius:4px;
           color:var(--primary);background:var(--primary-bg);border:1px solid var(--primary-border)}
         li.me .n{font-weight:600}
         li.fin .s{color:var(--success-text);background:transparent;border-color:transparent;font-weight:600;font-size:13px;padding:0}
@@ -334,8 +334,8 @@
         cls += ' out';
         s = p.dq ? '실격' : '포기';
       } else {
-        const leg = board.mode === 'relay' ? ` · ${p.leg || 0}/${board.total}` : '';
-        s = p.clicks != null ? `달리는 중${leg} · ${p.clicks}클릭째` : `달리는 중${leg}`;
+        const leg2 = board.mode === 'relay' ? `${p.leg || 0}/${board.total}` : '';
+        s = [leg2, p.clicks != null ? `${p.clicks}클릭째` : ''].filter(Boolean).join(' · ') || '출발';
       }
       const dots = board.mode === 'relay' && board.total > 1 && p.status !== 'waiting' ? legDots(p, board.total) : '';
       return `<li class="${cls}"><span class="rk ${rkCls}">${rk}</span><span class="n">${dots}${esc(p.name)}${p.me ? ' (나)' : ''}</span><span class="s">${s}</span></li>`;

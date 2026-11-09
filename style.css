@@ -368,6 +368,7 @@ code {
 }
 .list .kick:hover { color: var(--color-error); background: var(--color-error-bg); }
 .list .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#play-players .name { white-space: normal; overflow-wrap: anywhere; word-break: break-all; }
 .list .tags { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
 
 /* ---------- 카운트다운 ---------- */

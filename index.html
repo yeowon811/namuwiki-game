@@ -6,7 +6,7 @@
   <title>나무위키 레이스</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" />
-  <link rel="stylesheet" href="style.css?v=18" />
+  <link rel="stylesheet" href="style.css?v=19" />
 </head>
 <body>
   <!-- 아이콘 모음 (Ant Design의 Outlined 스타일을 따라 그린 선 아이콘) -->
@@ -82,8 +82,8 @@
             </div>
             <div class="form-item">
               <label for="su-nick" class="form-label">닉네임</label>
-              <input id="su-nick" class="input input-lg" maxlength="16" autocomplete="nickname" />
-              <p class="form-extra">게임에서 보이는 이름이에요. 나중에 바꾸려면 300포인트가 필요해요.</p>
+              <input id="su-nick" class="input input-lg" maxlength="8" autocomplete="nickname" />
+              <p class="form-extra">게임에서 보이는 이름이에요. 8글자까지 쓸 수 있어요. 나중에 바꾸려면 300포인트가 필요해요.</p>
             </div>
             <div class="form-item">
               <label for="su-id" class="form-label">아이디</label>
@@ -420,7 +420,7 @@
     <form method="dialog" id="nick-form">
       <div class="modal-title">닉네임 변경</div>
       <p class="text-secondary">300포인트를 써서 닉네임을 바꿔요. 지금 <b id="nick-have"></b> 있어요.</p>
-      <input id="nick-new" class="input input-lg" maxlength="16" placeholder="새 닉네임" />
+      <input id="nick-new" class="input input-lg" maxlength="8" placeholder="새 닉네임 (8글자까지)" />
       <p id="nick-error" class="form-error"></p>
       <div class="modal-footer">
         <button value="cancel" class="btn" formnovalidate>취소</button>
@@ -432,6 +432,6 @@
   <div id="toast" class="message" role="status"></div>
 
   <!-- 코드를 바꾸면 ?v= 숫자를 올려서 브라우저 캐시에 남은 옛 파일을 쓰지 않게 함 -->
-  <script type="module" src="app.js?v=25"></script>
+  <script type="module" src="app.js?v=27"></script>
 </body>
 </html>

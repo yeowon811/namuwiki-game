@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "나무위키 레이스 도우미",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "나무위키 레이스 게임에서 나무위키 문서 이동과 클릭 수를 자동으로 기록합니다.",
   "permissions": ["storage"],
   "host_permissions": ["https://ko.wikipedia.org/*"],

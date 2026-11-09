@@ -190,7 +190,10 @@ if (inviteCode) {
 // ---------- 유틸 ----------
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const namuUrl = (t) => 'https://namu.wiki/w/' + encodeURIComponent(t);
-const cleanName = (n) => String(n || '').replace(/\s+/g, ' ').trim().slice(0, 16);
+const cleanName = (n) => String(n || '').replace(/\s+/g, ' ').trim();
+// 닉네임 최대 길이 (실시간 순위 상자에 한 줄로 보이도록)
+const NICK_MAX = 8;
+const nickLen = (n) => n.length; // 입력칸·서버 규칙과 같은 방식으로 셈
 function fmtTime(ms) {
   if (ms == null) return '-';
   const total = Math.max(0, Math.floor(ms / 1000));
@@ -1208,8 +1211,8 @@ function render() {
     const spectators = room.players.filter((p) => !ranked.includes(p));
     $('#play-players').innerHTML = [...ranked, ...spectators].map((p) => {
       const relay = room.mode === 'relay';
-      const legStr = relay ? ` · ${p.leg || 0}/${targets.length}단계` : '';
-      let tag = `<span class="tag tag-processing">달리는 중${legStr}${p.auto && p.clicks != null ? ` · ${p.clicks}클릭째` : ''}</span>`;
+      const run = [relay ? `${p.leg || 0}/${targets.length}` : '', p.auto && p.clicks != null ? `${p.clicks}클릭째` : ''].filter(Boolean).join(' · ') || '출발';
+      let tag = `<span class="tag tag-processing">${run}</span>`;
       if (p.status === 'finished') tag = `<span class="tag tag-success">${room.mode === 'clicks' ? p.clicks + '클릭 · ' : ''}${fmtTimePrecise(p.elapsed)}</span>`;
       else if (p.status === 'gaveup') tag = `<span class="tag tag-error">${p.dq ? '실격' : '포기'}</span>`;
       else if (p.status === 'waiting') tag = '<span class="tag">관전</span>';
@@ -1378,6 +1381,7 @@ $('#signup-form').addEventListener('submit', (e) => {
   const err = (m) => { $('#auth-error').textContent = m; };
   if (!name) return err('이름을 입력해주세요.');
   if (!nick) return err('닉네임을 입력해주세요.');
+  if (nickLen(nick) > NICK_MAX) return err(`닉네임은 ${NICK_MAX}글자까지 쓸 수 있어요.`);
   if (!ID_RE.test(id)) return err('아이디는 영어 소문자, 숫자, _ 로 4~16자예요.');
   authGuard(e.currentTarget, async () => {
     signingUp = true;
@@ -1519,6 +1523,7 @@ $('#nick-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const nick = cleanName($('#nick-new').value);
   if (!nick) { $('#nick-error').textContent = '새 닉네임을 입력해주세요.'; return; }
+  if (nickLen(nick) > NICK_MAX) { $('#nick-error').textContent = `닉네임은 ${NICK_MAX}글자까지 쓸 수 있어요.`; return; }
   if (nick === profile.nick) { $('#nick-error').textContent = '지금 닉네임과 같아요.'; return; }
   if ((profile.points || 0) < 300) { $('#nick-error').textContent = '포인트가 부족해요.'; return; }
   $('#nick-submit').disabled = true;
