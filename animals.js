@@ -53,7 +53,7 @@ const BY_ID = new Map(ANIMALS.map((a) => [a.id, a]));
 const ACC_BY_ID = new Map(ACCESSORIES.map((a) => [a.id, a]));
 export const animalOf = (id) => BY_ID.get(id) || null;
 export const accOf = (id) => ACC_BY_ID.get(id) || null;
-export const ANIMAL_VER = 2; // 그림을 바꾸면 올려서 캐시를 새로 받게 함
+export const ANIMAL_VER = 3; // 그림을 바꾸면 올려서 캐시를 새로 받게 함
 export const animalImg = (id, view = 'front') => `img/animals/${id}-${view}.webp?v=${ANIMAL_VER}`;
 export const accImg = (id) => `img/acc/${id}.webp?v=${ANIMAL_VER}`;
 export const VIEWS = ['front', 'back', 'left1', 'left2', 'right1', 'right2'];
