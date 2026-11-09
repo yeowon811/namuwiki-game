@@ -42,6 +42,7 @@ onAuthStateChanged(auth, async (user) => {
       names.set(uid, v?.name || '');
     }));
     render();
+    syncNicks();
   }, (e) => gate(`회원 목록을 불러오지 못했어요. (${esc(e.message)})`));
 });
 
@@ -76,6 +77,33 @@ function render() {
     : '<tr><td colspan="8" class="adm-empty">회원이 없어요.</td></tr>';
 }
 $('#member-search').addEventListener('input', render);
+
+// 닉네임 목록(nicks) 채우기: 목록에 없는 회원 닉네임을 올림. 같은 닉네임이 여럿이면 먼저 가입한 사람이 가짐
+// (나중 사람은 게임에서 로그인하면 무료로 바꾸라는 안내를 받음)
+let nickSyncing = false;
+async function syncNicks() {
+  if (nickSyncing) return;
+  nickSyncing = true;
+  try {
+    const nicks = (await get(ref(db, 'nicks'))).val() || {};
+    const updates = {};
+    const dups = [];
+    const list = Object.entries(users).filter(([, u]) => u?.nick).sort(([, a], [, b]) => (a.createdAt || 0) - (b.createdAt || 0));
+    const taken = { ...nicks };
+    for (const [uid, u] of list) {
+      const key = nickKey(u.nick);
+      if (!taken[key]) { taken[key] = uid; updates[`nicks/${key}`] = uid; } else if (taken[key] !== uid) dups.push(u.nick);
+    }
+    if (Object.keys(updates).length) await update(ref(db), updates);
+    $('#nick-stats').textContent = `닉네임 목록: ${Object.keys(taken).length}개`
+      + (Object.keys(updates).length ? ` (방금 ${Object.keys(updates).length}개 등록)` : '')
+      + (dups.length ? ` · 같은 닉네임 ${dups.length}명: ${dups.join(', ')} (로그인하면 무료로 바꾸라는 안내가 떠요)` : ' · 같은 닉네임 없음');
+  } catch (e) {
+    $('#nick-stats').textContent = `닉네임 목록을 정리하지 못했어요. 데이터베이스 규칙을 다시 게시했는지 확인해 주세요. (${e.message})`;
+  } finally {
+    nickSyncing = false;
+  }
+}
 
 // 닉네임 목록에서 그 회원의 닉네임 지우기 (그 회원 것일 때만)
 const nickKey = (n) => String(n || '').toLowerCase().replaceAll(' ', '').replace(/[.$#[\]/]/g, '_');

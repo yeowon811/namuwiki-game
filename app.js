@@ -212,6 +212,14 @@ const cleanName = (n) => String(n || '').replace(/\s+/g, ' ').trim();
 // 닉네임 중복 확인용 키 (database.rules.json의 nicks 규칙과 같아야 함): 소문자, 띄어쓰기 없앰, 키에 못 쓰는 글자는 _
 const nickKey = (n) => String(n || '').toLowerCase().replaceAll(' ', '').replace(/[.$#[\]/]/g, '_');
 const nickOwner = async (n) => (await get(ref(db, `nicks/${nickKey(n)}`))).val();
+// 다른 사람이 이 닉네임을 쓰는지: 닉네임 목록 + (목록에 아직 없는 예전 회원까지) 전체 회원 정보로 확인
+async function nickTakenBy(n, myUid) {
+  const owner = await nickOwner(n);
+  if (owner && owner !== myUid) return true;
+  const all = (await get(ref(db, 'users'))).val() || {};
+  const key = nickKey(n);
+  return Object.entries(all).some(([uid, u]) => uid !== myUid && u?.nick && nickKey(u.nick) === key);
+}
 // 닉네임 최대 길이 (실시간 순위 상자에 한 줄로 보이도록)
 const NICK_MAX = 8;
 const nickLen = (n) => n.length; // 입력칸·서버 규칙과 같은 방식으로 셈
@@ -1603,6 +1611,7 @@ $('#signup-form').addEventListener('submit', (e) => {
     const cred = await createUserWithEmailAndPassword(auth, idToEmail(id), idToPassword(id));
     const uid = cred.user.uid;
     try {
+      if (await nickTakenBy(nick, uid)) throw new Error('이미 다른 사람이 쓰는 닉네임이에요. 다른 닉네임을 골라 주세요.');
       await update(ref(db), {
         [`ids/${id}`]: uid,
         [`users/${uid}`]: {
@@ -1779,8 +1788,8 @@ $('#nick-form').addEventListener('submit', async (e) => {
     const uid = authUser.uid;
     const newKey = nickKey(nick);
     const oldKey = nickKey(profile.nick);
-    const [newOwner, oldOwner] = await Promise.all([nickOwner(nick), nickOwner(profile.nick)]);
-    if (newOwner && newOwner !== uid) { $('#nick-error').textContent = '이미 다른 사람이 쓰는 닉네임이에요.'; return; }
+    const [newOwner, oldOwner, taken] = await Promise.all([nickOwner(nick), nickOwner(profile.nick), nickTakenBy(nick, uid)]);
+    if (taken) { $('#nick-error').textContent = '이미 다른 사람이 쓰는 닉네임이에요.'; return; }
     const updates = { [`users/${uid}/nick`]: nick };
     if (cost) updates[`users/${uid}/points`] = profile.points - cost;
     if (newOwner !== uid) updates[`nicks/${newKey}`] = uid;
