@@ -17,6 +17,7 @@ export const ANIMALS = [
   { id: 'bear', label: '곰', emoji: '🐻' },
   { id: 'fox', label: '여우', emoji: '🦊' },
   { id: 'sheep', label: '양', emoji: '🐑' },
+  { id: 'hamster', label: '햄스터', emoji: '🐹' },
 ];
 
 // 액세서리 부위: 부위마다 하나씩 착용
@@ -82,6 +83,7 @@ export const accHtml = (it, cls = '') => `<img class="${cls}" src="${accImg(it.i
 //   feet: 발바닥 가운데 · pack: 가방 가운데
 // F = 앞모습(뒷모습은 좌우 반전해서 씀), S = 왼쪽을 보는 옆모습(오른쪽은 좌우 반전)
 // fw / sw = 앞모습 / 옆모습 그림 폭(px)
+// S2 / sw2: 옆모습 두 번째 장이 첫 장과 많이 다를 때만 (햄스터: 달리는 자세)
 const ANCHORS = {
   cat: { fw: 286, sw: 262,
     F: { head: [146, 46, 200], eyes: [148, 160, 175], neck: [146, 224, 150], body: [146, 214, 150], feet: [143, 357, 165], pack: [146, 270, 150] },
@@ -113,6 +115,10 @@ const ANCHORS = {
   sheep: { fw: 343, sw: 280,
     F: { head: [171, 24, 200], eyes: [170, 154, 160], neck: [171, 226, 165], body: [171, 220, 170], feet: [171, 357, 170], pack: [171, 290, 160] },
     S: { head: [140, 26, 200], eyes: [32, 154, 105], neck: [84, 232, 115], body: [116, 224, 140], feet: [110, 354, 150], pack: [200, 282, 150] } },
+  hamster: { fw: 299, sw: 266, sw2: 267,
+    F: { head: [149, 30, 190], eyes: [147, 122, 150], neck: [148, 178, 145], body: [148, 172, 172], feet: [148, 357, 180], pack: [148, 232, 165] },
+    S: { head: [140, 32, 180], eyes: [40, 130, 105], neck: [80, 182, 105], body: [122, 178, 138], feet: [112, 352, 145], pack: [210, 232, 140] },
+    S2: { head: [112, 174, 150], eyes: [42, 194, 95], neck: [70, 250, 85], body: [138, 236, 112], feet: [132, 352, 130], pack: [206, 228, 120] } },
 };
 const H = 360;
 // 부위별: 기준점에 액세서리 그림의 어느 점을 맞출지 (그림 크기 대비 %), 옆모습에서 가로로 줄이는 정도
@@ -139,14 +145,16 @@ export function accPlace(animal, view, slot, item) {
   if (!an) return null;
   const kind = viewKind(view);
   const isSide = kind === 'side';
-  const p = (isSide ? an.S : an.F)[SLOT_ANCHOR[slot]];
-  const W = isSide ? an.sw : an.fw;
+  const second = isSide && an.S2 && view.endsWith('2');
+  const set = second ? an.S2 : isSide ? an.S : an.F;
+  const p = set[SLOT_ANCHOR[slot]];
+  const W = second ? an.sw2 : isSide ? an.sw : an.fw;
   // 뒷모습은 앞모습 좌우 반전, 오른쪽 옆모습은 왼쪽 옆모습 좌우 반전
   const mirror = kind === 'back' || view.startsWith('right');
   const x = mirror ? W - p[0] : p[0];
   const fit = SLOT_FIT[slot];
   // 푹 쓰는 모자(비니·야구 모자·베레모)는 아랫단을 이마에
-  const eyesY = (isSide ? an.S : an.F).eyes[1];
+  const eyesY = set.eyes[1];
   const y = item?.brow != null ? p[1] + (eyesY - p[1]) * item.brow : p[1];
   return {
     left: (x / W) * 100, top: (y / H) * 100, width: (p[2] / H) * (item?.size || 1),
