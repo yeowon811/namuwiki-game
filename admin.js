@@ -77,6 +77,15 @@ function render() {
 }
 $('#member-search').addEventListener('input', render);
 
+// 닉네임 목록에서 그 회원의 닉네임 지우기 (그 회원 것일 때만)
+const nickKey = (n) => String(n || '').toLowerCase().replaceAll(' ', '').replace(/[.$#[\]/]/g, '_');
+async function nickRemoval(u, uid) {
+  if (!u?.nick) return {};
+  const key = nickKey(u.nick);
+  const owner = (await get(ref(db, `nicks/${key}`))).val();
+  return owner === uid ? { [`nicks/${key}`]: null } : {};
+}
+
 // ---------- 데이터 정리 ----------
 const STALE_ROOM_MS = 2 * 3600 * 1000;
 let clockOffset = 0;
@@ -93,6 +102,7 @@ async function findStale() {
   const stale = new Set();
   for (const [code, r] of Object.entries(rooms)) {
     const last = idx[code]?.lastActive;
+    if (!r?.hostId || !r?.state || r?.closed) { stale.add(code); continue; } // 빈 조각만 남은 방, 닫힌 방
     if (typeof last === 'number') { if (last <= cutoff) stale.add(code); continue; }
     const anyoneOnline = Object.values(r?.players || {}).some((p) => p?.online);
     if (!anyoneOnline) stale.add(code);
@@ -143,11 +153,11 @@ document.addEventListener('click', async (e) => {
       toast(`${u.nick}님을 승인했어요.`);
     } else if (b.dataset.act === 'reject') {
       if (!confirm(`${u.nick}(@${u.id})님의 가입을 거절할까요? 가입 정보가 지워져요.`)) return;
-      await update(ref(db), { [`users/${uid}`]: null, [`private/${uid}`]: null, [`ids/${u.id}`]: null });
+      await update(ref(db), { [`users/${uid}`]: null, [`private/${uid}`]: null, [`ids/${u.id}`]: null, ...(await nickRemoval(u, uid)) });
       toast(`${u.nick}님의 가입을 거절했어요.`);
     } else if (b.dataset.act === 'delete') {
       if (!confirm(`${u.nick}(@${u.id})님의 회원 정보를 지울까요? 포인트와 기록이 모두 사라지고 되돌릴 수 없어요.`)) return;
-      await update(ref(db), { [`users/${uid}`]: null, [`private/${uid}`]: null, [`ids/${u.id}`]: null });
+      await update(ref(db), { [`users/${uid}`]: null, [`private/${uid}`]: null, [`ids/${u.id}`]: null, ...(await nickRemoval(u, uid)) });
       toast(`${u.nick}님의 회원 정보를 지웠어요.`);
     } else if (b.dataset.act === 'suspend') {
       if (!confirm(`${u.nick}님을 이용 정지할까요? 게임을 할 수 없게 돼요.`)) return;

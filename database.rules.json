@@ -34,7 +34,7 @@
         },
         "nick": {
           ".write": "auth != null && auth.uid === $uid && data.exists() && data.parent().child('approved').val() === true",
-          ".validate": "newData.isString() && newData.val().length >= 1 && (newData.val().length <= 8 || newData.val() === data.val()) && (!data.exists() || newData.val() === data.val() || root.child('admins').child(auth.uid).val() === true || newData.parent().child('points').val() === data.parent().child('points').val() - 300)"
+          ".validate": "newData.isString() && newData.val().length >= 1 && (newData.val().length <= 8 || newData.val() === data.val()) && (!data.exists() || newData.val() === data.val() || root.child('admins').child(auth.uid).val() === true || (root.child('nicks').child(data.val().toLowerCase().replace(' ', '').replace('.', '_').replace('$', '_').replace('#', '_').replace('[', '_').replace(']', '_').replace('/', '_')).exists() && root.child('nicks').child(data.val().toLowerCase().replace(' ', '').replace('.', '_').replace('$', '_').replace('#', '_').replace('[', '_').replace(']', '_').replace('/', '_')).val() !== $uid) || newData.parent().child('points').val() === data.parent().child('points').val() - 300) && (newData.val() === data.val() || root.child('admins').child(auth.uid).val() === true || newData.parent().parent().parent().child('nicks').child(newData.val().toLowerCase().replace(' ', '').replace('.', '_').replace('$', '_').replace('#', '_').replace('[', '_').replace(']', '_').replace('/', '_')).val() === $uid)"
         },
         "points": {
           ".write": "auth != null && root.child('users').child(auth.uid).child('approved').val() === true",
@@ -143,11 +143,11 @@
       }
     },
     "rooms": {
-      ".read": "auth != null && root.child('admins').child(auth.uid).val() === true",
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('approved').val() === true || root.child('admins').child(auth.uid).val() === true)",
       "$code": {
         ".read": "auth != null",
         ".write": "auth != null && root.child('users').child(auth.uid).child('approved').val() === true",
-        ".validate": "$code.matches(/^[A-Z0-9]{4}$/)",
+        ".validate": "$code.matches(/^[A-Z0-9]{4}$/) && newData.hasChildren(['hostId', 'state'])",
         "mode": {
           ".validate": "newData.val() === 'time' || newData.val() === 'clicks' || newData.val() === 'relay'"
         },
@@ -245,6 +245,13 @@
             }
           }
         }
+      }
+    },
+    "nicks": {
+      ".read": "true",
+      "$k": {
+        ".write": "auth != null && ((!data.exists() && newData.val() === auth.uid) || (data.val() === auth.uid && !newData.exists()) || root.child('admins').child(auth.uid).val() === true)",
+        ".validate": "newData.isString() && (root.child('admins').child(auth.uid).val() === true || newData.parent().parent().child('users').child(auth.uid).child('nick').val().toLowerCase().replace(' ', '').replace('.', '_').replace('$', '_').replace('#', '_').replace('[', '_').replace(']', '_').replace('/', '_') === $k)"
       }
     }
   }

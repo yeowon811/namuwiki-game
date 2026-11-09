@@ -128,8 +128,9 @@
           </div>
           <div class="pf-stats" id="pf-stats"></div>
           <div class="pf-actions">
-            <button id="btn-nick" class="btn" type="button">닉네임 변경 <span class="tag">300P</span></button>
+            <button id="btn-nick" class="btn" type="button">닉네임 변경 <span class="tag" id="nick-cost">300P</span></button>
           </div>
+          <div id="nick-conflict" class="alert alert-warning hidden"><svg class="ic alert-icon"><use href="#i-warn"/></svg><span>같은 닉네임을 쓰는 사람이 있어요. <b>닉네임 변경</b>을 눌러 한 번 무료로 바꿔 주세요.</span></div>
           <button id="btn-create" class="btn btn-primary btn-lg btn-block">방 만들기</button>
           <!-- 초대 링크로 들어왔을 때만 보임 -->
           <button id="btn-invite" class="btn btn-lg btn-block invite-btn hidden"></button>
@@ -478,7 +479,8 @@
   <dialog id="nick-dialog" class="modal">
     <form method="dialog" id="nick-form">
       <div class="modal-title">닉네임 변경</div>
-      <p class="text-secondary">300포인트를 써서 닉네임을 바꿔요. 지금 <b id="nick-have"></b> 있어요.</p>
+      <p class="text-secondary" id="nick-desc">300포인트를 써서 닉네임을 바꿔요. 지금 <b id="nick-have"></b> 있어요.</p>
+      <p class="text-tertiary small">다른 사람이 쓰는 닉네임은 쓸 수 없어요. (대소문자·띄어쓰기만 다른 것도 같은 닉네임이에요)</p>
       <input id="nick-new" class="input input-lg" maxlength="8" placeholder="새 닉네임 (8글자까지)" />
       <p id="nick-error" class="form-error"></p>
       <div class="modal-footer">
@@ -491,6 +493,6 @@
   <div id="toast" class="message" role="status"></div>
 
   <!-- 코드를 바꾸면 ?v= 숫자를 올려서 브라우저 캐시에 남은 옛 파일을 쓰지 않게 함 -->
-  <script type="module" src="app.js?v=47"></script>
+  <script type="module" src="app.js?v=48"></script>
 </body>
 </html>

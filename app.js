@@ -209,6 +209,9 @@ if (inviteCode) {
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const namuUrl = (t) => 'https://namu.wiki/w/' + encodeURIComponent(t);
 const cleanName = (n) => String(n || '').replace(/\s+/g, ' ').trim();
+// 닉네임 중복 확인용 키 (database.rules.json의 nicks 규칙과 같아야 함): 소문자, 띄어쓰기 없앰, 키에 못 쓰는 글자는 _
+const nickKey = (n) => String(n || '').toLowerCase().replaceAll(' ', '').replace(/[.$#[\]/]/g, '_');
+const nickOwner = async (n) => (await get(ref(db, `nicks/${nickKey(n)}`))).val();
 // 닉네임 최대 길이 (실시간 순위 상자에 한 줄로 보이도록)
 const NICK_MAX = 8;
 const nickLen = (n) => n.length; // 입력칸·서버 규칙과 같은 방식으로 셈
@@ -1595,6 +1598,7 @@ $('#signup-form').addEventListener('submit', (e) => {
   if (nickLen(nick) > NICK_MAX) return err(`닉네임은 ${NICK_MAX}글자까지 쓸 수 있어요.`);
   if (!ID_RE.test(id)) return err('아이디는 영어 소문자, 숫자, _ 로 4~16자예요.');
   authGuard(e.currentTarget, async () => {
+    if (await nickOwner(nick)) throw new Error('이미 다른 사람이 쓰는 닉네임이에요. 다른 닉네임을 골라 주세요.');
     signingUp = true;
     const cred = await createUserWithEmailAndPassword(auth, idToEmail(id), idToPassword(id));
     const uid = cred.user.uid;
@@ -1606,6 +1610,7 @@ $('#signup-form').addEventListener('submit', (e) => {
           stats: { games: 0, win1: 0, win2: 0, win3: 0, daily1: 0 },
         },
         [`private/${uid}`]: { name },
+        [`nicks/${nickKey(nick)}`]: uid,
       });
     } catch (dbErr) {
       // 데이터 저장에 실패하면 만든 로그인 계정도 지워서 다시 가입할 수 있게 함
@@ -1624,6 +1629,26 @@ $$('.btn-logout').forEach((b) => (b.onclick = async () => {
   await signOut(auth);
 }));
 
+// 닉네임 목록에 내 닉네임 올리기 (처음 한 번), 같은 닉네임이 먼저 있으면 바꿔 달라고 안내
+let nickConflict = false;
+let nickCheckedFor = null;
+async function checkMyNick() {
+  const uid = authUser?.uid;
+  if (!uid || !profile?.nick || !profile.approved) return;
+  const sig = `${uid}/${nickKey(profile.nick)}`;
+  if (nickCheckedFor === sig) return;
+  nickCheckedFor = sig;
+  try {
+    const owner = await nickOwner(profile.nick);
+    if (!owner) await set(ref(db, `nicks/${nickKey(profile.nick)}`), uid);
+    nickConflict = !!owner && owner !== uid;
+  } catch (e) {
+    console.warn('[닉네임]', e.message);
+    nickCheckedFor = null;
+  }
+  renderProfile();
+}
+
 function watchProfile(uid) {
   profileUnsubs.forEach((u) => u());
   profileUnsubs = [
@@ -1631,6 +1656,7 @@ function watchProfile(uid) {
       const prev = profile;
       profile = s.val();
       profileLoaded = true;
+      checkMyNick();
       showHome();
     }, (e) => { console.warn('[계정]', e.message); }),
     onValue(ref(db, `admins/${uid}`), (s) => { isAdmin = s.val() === true; renderHeaderUser(); }, () => {}),
@@ -1723,12 +1749,17 @@ function renderProfile() {
   $('#pf-points').textContent = `${(profile.points || 0).toLocaleString()} 포인트`;
   const cell = (n, label) => `<div><b>${n || 0}</b><span>${label}</span></div>`;
   $('#pf-stats').innerHTML = cell(st.games, '게임') + cell(st.win1, '🥇 1등') + cell(st.win2, '🥈 2등') + cell(st.win3, '🥉 3등') + cell(st.daily1, '👑 오늘의 챔피언');
-  $('#btn-nick').disabled = (profile.points || 0) < 300;
+  $('#btn-nick').disabled = !nickConflict && (profile.points || 0) < 300;
+  $('#nick-cost').textContent = nickConflict ? '무료' : '300P';
+  $('#nick-conflict').classList.toggle('hidden', !nickConflict);
 }
 
 // ---------- 닉네임 변경 (300포인트) ----------
 $('#btn-nick').onclick = () => {
   $('#nick-have').textContent = `${(profile.points || 0).toLocaleString()}P`;
+  $('#nick-desc').innerHTML = nickConflict ? '같은 닉네임을 쓰는 사람이 있어서 <b>무료로</b> 바꿀 수 있어요.'
+    : `300포인트를 써서 닉네임을 바꿔요. 지금 <b>${(profile.points || 0).toLocaleString()}P</b> 있어요.`;
+  $('#nick-submit').textContent = nickConflict ? '무료로 변경' : '300P 쓰고 변경';
   $('#nick-new').value = '';
   $('#nick-error').textContent = '';
   $('#nick-dialog').showModal();
@@ -1741,12 +1772,23 @@ $('#nick-form').addEventListener('submit', async (e) => {
   if (!nick) { $('#nick-error').textContent = '새 닉네임을 입력해주세요.'; return; }
   if (nickLen(nick) > NICK_MAX) { $('#nick-error').textContent = `닉네임은 ${NICK_MAX}글자까지 쓸 수 있어요.`; return; }
   if (nick === profile.nick) { $('#nick-error').textContent = '지금 닉네임과 같아요.'; return; }
-  if ((profile.points || 0) < 300) { $('#nick-error').textContent = '포인트가 부족해요.'; return; }
+  const cost = nickConflict ? 0 : 300;
+  if ((profile.points || 0) < cost) { $('#nick-error').textContent = '포인트가 부족해요.'; return; }
   $('#nick-submit').disabled = true;
   try {
-    await update(ref(db, `users/${authUser.uid}`), { nick, points: profile.points - 300 });
+    const uid = authUser.uid;
+    const newKey = nickKey(nick);
+    const oldKey = nickKey(profile.nick);
+    const [newOwner, oldOwner] = await Promise.all([nickOwner(nick), nickOwner(profile.nick)]);
+    if (newOwner && newOwner !== uid) { $('#nick-error').textContent = '이미 다른 사람이 쓰는 닉네임이에요.'; return; }
+    const updates = { [`users/${uid}/nick`]: nick };
+    if (cost) updates[`users/${uid}/points`] = profile.points - cost;
+    if (newOwner !== uid) updates[`nicks/${newKey}`] = uid;
+    if (oldKey !== newKey && oldOwner === uid) updates[`nicks/${oldKey}`] = null; // 예전 닉네임은 다른 사람이 쓸 수 있게
+    await update(ref(db), updates);
+    nickConflict = false;
     $('#nick-dialog').close();
-    toast(`닉네임을 '${nick}'(으)로 바꿨어요. (-300P)`, 'success');
+    toast(`닉네임을 '${nick}'(으)로 바꿨어요.${cost ? ` (-${cost}P)` : ''}`, 'success');
   } catch (err) {
     $('#nick-error').textContent = authMessage(err);
   } finally {
@@ -1980,15 +2022,25 @@ async function cleanupStaleRooms() {
       return serverTimestamp();
     });
     if (!mine) return;
-    const [idx, lob] = await Promise.all([get(ref(db, 'roomIndex')), get(ref(db, 'lobbies'))]);
+    const [roomsSnap, idx, lob] = await Promise.all([
+      get(ref(db, 'rooms')).catch(() => null), get(ref(db, 'roomIndex')), get(ref(db, 'lobbies')),
+    ]);
     const cutoff = now() - STALE_ROOM_MS;
     const updates = {};
-    for (const [code, v] of Object.entries(idx.val() || {})) {
-      if (!(typeof v?.lastActive === 'number' && v.lastActive > cutoff)) {
-        updates[`rooms/${code}`] = null;
-        updates[`lobbies/${code}`] = null;
-        updates[`roomIndex/${code}`] = null;
-      }
+    const drop = (code) => { updates[`rooms/${code}`] = null; updates[`lobbies/${code}`] = null; updates[`roomIndex/${code}`] = null; };
+    const index = idx.val() || {};
+    for (const [code, v] of Object.entries(index)) {
+      if (!(typeof v?.lastActive === 'number' && v.lastActive > cutoff)) drop(code);
+    }
+    // 방 목록을 읽을 수 있으면: 활동 기록이 없는 방, 닫힌 방, 방장·상태가 없는 빈 방도 정리
+    for (const [code, r] of Object.entries(roomsSnap?.val() || {})) {
+      if (updates[`rooms/${code}`] === null) continue;
+      const last = index[code]?.lastActive;
+      const anyoneOnline = Object.values(r?.players || {}).some((p) => p?.online);
+      const broken = !r?.hostId || !r?.state; // 지워진 뒤 늦게 도착한 쓰기로 남은 조각
+      const closed = !!r?.closed;
+      const noBeat = typeof last !== 'number' && !anyoneOnline && (r?.createdAt || 0) < cutoff;
+      if (broken || closed || noBeat) drop(code);
     }
     // 목록에만 남은 오래된 항목도 정리
     for (const [code, v] of Object.entries(lob.val() || {})) {
