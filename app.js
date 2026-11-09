@@ -1359,6 +1359,7 @@ function playerRow(p, extra = '') {
 function render() {
   const ph = phase();
   lastPhase = ph;
+  syncPresence();
   $('#ext-installed').classList.toggle('hidden', !ext.ready);
   if (ph !== 'lobby') plaza?.pause();
   if (ph !== 'lobby' && ph !== 'results') showReadyBar(false);
@@ -1642,8 +1643,61 @@ let signingUp = false;
 
 $$('.btn-logout').forEach((b) => (b.onclick = async () => {
   if (room) return;
+  await stopPresence();
   await signOut(auth);
 }));
+
+// ---------- 접속 현황 (관리자 화면에서 봄) ----------
+// presence/<uid>/conns/<창마다 하나> = { where, room, at }: 연결이 끊기면 서버가 자동으로 지움
+// presence/<uid>/lastSeen = 마지막으로 나간 시각
+let presenceRef = null;
+let presenceUid = null;
+let presenceSent = null;
+let netConnected = false;
+function presenceInfo() {
+  const ph = phase();
+  const where = ph === 'home' ? (shopOpen ? 'shop' : 'home') : ph === 'countdown' ? 'playing' : ph;
+  return { where, room: room?.code || null, daily: room?.daily ? true : null };
+}
+function armPresence() {
+  onDisconnect(presenceRef).remove();
+  onDisconnect(ref(db, `presence/${presenceUid}/lastSeen`)).set(serverTimestamp());
+}
+function syncPresence() {
+  const uid = authUser?.uid;
+  if (!uid || !netConnected || !profile?.approved) return;
+  if (!presenceRef || presenceUid !== uid) {
+    presenceUid = uid;
+    presenceRef = push(ref(db, `presence/${uid}/conns`));
+    presenceSent = null;
+    armPresence();
+  }
+  const info = presenceInfo();
+  const json = JSON.stringify(info);
+  if (json === presenceSent) return;
+  presenceSent = json;
+  set(presenceRef, { ...info, at: serverTimestamp() }).catch((e) => { presenceSent = null; console.warn('[접속 현황]', e.message); });
+}
+async function stopPresence() {
+  if (!presenceRef) return;
+  const r = presenceRef;
+  const uid = presenceUid;
+  presenceRef = null;
+  presenceUid = null;
+  presenceSent = null;
+  try {
+    await onDisconnect(r).cancel();
+    await onDisconnect(ref(db, `presence/${uid}/lastSeen`)).cancel();
+    await update(ref(db), { [`presence/${uid}/conns/${r.key}`]: null, [`presence/${uid}/lastSeen`]: serverTimestamp() });
+  } catch (e) { console.warn('[접속 현황]', e.message); }
+}
+onValue(ref(db, '.info/connected'), (s) => {
+  netConnected = !!s.val();
+  if (!netConnected) return;
+  // 다시 연결되면(끊긴 사이에 서버가 지웠으니) 다시 올림
+  if (presenceRef) { armPresence(); presenceSent = null; }
+  syncPresence();
+});
 
 // 닉네임 목록에 내 닉네임 올리기 (처음 한 번), 같은 닉네임이 먼저 있으면 바꿔 달라고 안내
 let nickConflict = false;
@@ -1689,6 +1743,7 @@ onAuthStateChanged(auth, (user) => {
   shopOpen = false;
   isAdmin = false;
   if (!user) {
+    presenceRef = null; // 로그아웃 뒤엔 쓸 수 없음 (연결이 끊기면 서버가 지움)
     playerId = null;
     if (room) leaveLocal();
     unwatchLobbies();
@@ -1732,6 +1787,7 @@ function showHome() {
     $('#pending-who').textContent = `${profile.nick} (@${profile.id})`;
     return show('pending');
   }
+  syncPresence();
   if (shopOpen) { show('shop'); renderShop(); return; }
   show('home');
   renderProfile();

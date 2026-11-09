@@ -11,6 +11,7 @@ const auth = getAuth(app);
 const db = getDatabase(app);
 
 let users = {};
+let presence = {}; // uid → { conns: { 창: { where, room, at } }, lastSeen }
 const names = new Map(); // uid → 실명 (private)
 let toastTimer;
 function toast(msg) {
@@ -34,7 +35,9 @@ onAuthStateChanged(auth, async (user) => {
   $('#adm-gate').classList.add('hidden');
   $('#adm-main').classList.remove('hidden');
   loadRoomStats();
-  unsub = onValue(ref(db, 'users'), async (s) => {
+  const unsubPresence = onValue(ref(db, 'presence'), (s) => { presence = s.val() || {}; render(); },
+    (e) => { $('#online-sum').textContent = `접속 현황을 불러오지 못했어요. 데이터베이스 규칙을 다시 게시했는지 확인해 주세요. (${e.message})`; });
+  const unsubUsers = onValue(ref(db, 'users'), async (s) => {
     users = s.val() || {};
     // 실명은 private에 따로 있어서 한 명씩 읽음
     await Promise.all(Object.keys(users).filter((uid) => !names.has(uid)).map(async (uid) => {
@@ -44,10 +47,42 @@ onAuthStateChanged(auth, async (user) => {
     render();
     syncNicks();
   }, (e) => gate(`회원 목록을 불러오지 못했어요. (${esc(e.message)})`));
+  unsub = () => { unsubPresence(); unsubUsers(); };
 });
+
+// 접속 현황
+const WHERE = { home: '시작 화면', shop: '상점', lobby: '대기실', playing: '게임 중', results: '결과 화면' };
+const connsOf = (uid) => Object.values(presence[uid]?.conns || {}).filter((c) => c && typeof c === 'object');
+const isOnline = (uid) => connsOf(uid).length > 0;
+function fmtAgo(t) {
+  if (typeof t !== 'number') return '-';
+  const m = Math.floor((Date.now() - t) / 60000);
+  if (m < 1) return '방금 전';
+  if (m < 60) return `${m}분 전`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}시간 전`;
+  const d = Math.floor(h / 24);
+  return d < 7 ? `${d}일 전` : fmtDate(t);
+}
+const whereText = (c) => (c.daily ? '오늘의 챔피언' : WHERE[c.where] || c.where) + (c.room && !c.daily ? ` <span class="text-tertiary">· 방 ${esc(c.room)}</span>` : '');
+function renderOnline(all) {
+  const on = all.filter((u) => isOnline(u.uid))
+    .map((u) => ({ ...u, conns: connsOf(u.uid).sort((a, b) => (b.at || 0) - (a.at || 0)) }))
+    .sort((a, b) => (b.conns[0].at || 0) - (a.conns[0].at || 0));
+  const playing = on.filter((u) => u.conns.some((c) => c.where === 'playing')).length;
+  $('#online-count').textContent = `${on.length}명`;
+  $('#online-sum').textContent = on.length ? `지금 ${on.length}명 접속 중 · 게임 중 ${playing}명` : '지금 접속한 사람이 없어요.';
+  $('#online-list').innerHTML = on.length
+    ? on.map((u) => `<tr><td class="nick"><span class="on-dot"></span>${esc(u.nick)}</td><td>@${esc(u.id)}</td>`
+      + `<td>${u.conns.map(whereText).join('<br>')}${u.conns.length > 1 ? ` <span class="tag">창 ${u.conns.length}개</span>` : ''}</td>`
+      + `<td class="text-tertiary">${fmtAgo(u.conns[0].at)}</td></tr>`).join('')
+    : '<tr><td colspan="4" class="adm-empty">접속 중인 사람이 없어요.</td></tr>';
+}
+setInterval(() => { if (Object.keys(users).length) render(); }, 60 * 1000); // '몇 분 전' 갱신
 
 function render() {
   const all = Object.entries(users).map(([uid, u]) => ({ uid, ...u, name: names.get(uid) || '' }));
+  renderOnline(all);
   const pending = all.filter((u) => !u.approved && !u.suspended).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
   $('#pending-count').textContent = `${pending.length}명`;
   $('#pending-list').innerHTML = pending.length
@@ -64,7 +99,9 @@ function render() {
   $('#member-list').innerHTML = members.length
     ? members.map((u) => {
       const st = u.stats || {};
+      const seen = isOnline(u.uid) ? '<span class="on-dot"></span>접속 중' : `<span class="text-tertiary">${fmtAgo(presence[u.uid]?.lastSeen)}</span>`;
       return `<tr><td class="nick">${esc(u.nick)}${u.approved ? '' : ' <span class="tag tag-error">정지</span>'}</td><td>@${esc(u.id)}</td><td>${esc(u.name)}</td>`
+        + `<td class="seen">${seen}</td>`
         + `<td class="num">${(u.points || 0).toLocaleString()}</td><td class="num">${st.games || 0}</td>`
         + `<td class="num">${st.win1 || 0}/${st.win2 || 0}/${st.win3 || 0}</td><td class="num">${st.daily1 || 0}</td>`
         + `<td><div class="acts"><button class="btn btn-sm" data-act="points" data-uid="${u.uid}">포인트 조정</button>`
@@ -74,7 +111,7 @@ function render() {
         + `<button class="btn btn-sm btn-danger" data-act="delete" data-uid="${u.uid}">삭제</button>`
         + '</div></td></tr>';
     }).join('')
-    : '<tr><td colspan="8" class="adm-empty">회원이 없어요.</td></tr>';
+    : '<tr><td colspan="9" class="adm-empty">회원이 없어요.</td></tr>';
 }
 $('#member-search').addEventListener('input', render);
 

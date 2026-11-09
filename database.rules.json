@@ -253,6 +253,38 @@
         ".write": "auth != null && ((!data.exists() && newData.val() === auth.uid) || (data.val() === auth.uid && !newData.exists()) || root.child('admins').child(auth.uid).val() === true)",
         ".validate": "newData.isString() && (root.child('admins').child(auth.uid).val() === true || newData.parent().parent().child('users').child(auth.uid).child('nick').val().toLowerCase().replace(' ', '').replace('.', '_').replace('$', '_').replace('#', '_').replace('[', '_').replace(']', '_').replace('/', '_') === $k)"
       }
+    },
+    "presence": {
+      ".read": "auth != null && root.child('admins').child(auth.uid).val() === true",
+      "$uid": {
+        ".write": "auth != null && auth.uid === $uid",
+        "conns": {
+          "$c": {
+            ".validate": "newData.hasChildren(['where', 'at']) && newData.child('at').isNumber()",
+            "where": {
+              ".validate": "newData.isString() && newData.val().length <= 16"
+            },
+            "room": {
+              ".validate": "newData.isString() && newData.val().length <= 8"
+            },
+            "daily": {
+              ".validate": "newData.isBoolean()"
+            },
+            "at": {
+              ".validate": "newData.isNumber()"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+        "lastSeen": {
+          ".validate": "newData.isNumber()"
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
     }
   }
 }
