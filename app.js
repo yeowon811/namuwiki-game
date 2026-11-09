@@ -7,7 +7,8 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
 import { firebaseConfig } from './firebase-config.js';
 import KEYWORDS from './keywords.js';
-import { SLOTS, cleanAcc, glyphOf } from './accessories.js';
+import { ANIMALS, animalOf, animalImg } from './animals.js';
+import { createPlaza } from './plaza2d.js?v=1';
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
@@ -462,7 +463,7 @@ function leaveLocal() {
   store.del('nr.room', ss);
   history.replaceState(null, '', location.pathname);
   if ($('#arrive-dialog').open) $('#arrive-dialog').close();
-  plaza3d?.pause();
+  plaza?.pause();
   showHome();
 }
 
@@ -819,27 +820,15 @@ $('#btn-copy').onclick = async () => {
 };
 
 // ---------- 대기실 광장 이벤트 ----------
-$('#plaza').addEventListener('click', (e) => {
-  if (!room || !me() || plaza3d) return;
-  const r = e.currentTarget.getBoundingClientRect();
-  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
-  const x = Math.round(clamp((e.clientX - r.left) / r.width, 0.06, 0.94) * 1000) / 1000;
-  const y = Math.round(clamp((e.clientY - r.top) / r.height, 0.22, 0.86) * 1000) / 1000;
-  update(roomRef(room.code, 'players', playerId), { pos: { x, y } });
-});
 $('#btn-char').onclick = (e) => {
   const open = $('#char-picker').classList.toggle('hidden') === false;
   e.currentTarget.setAttribute('aria-expanded', String(open));
-  e.currentTarget.textContent = open ? '닫기' : '내 캐릭터 꾸미기';
+  e.currentTarget.textContent = open ? '닫기' : '내 캐릭터 고르기';
 };
 $('#char-picker').addEventListener('click', (e) => {
   const b = e.target.closest('button');
-  if (!b || !room || !me()) return;
-  const cur = charOf(me());
-  const next = { c: cur.c, ...cur.acc };
-  if (b.dataset.c) next.c = b.dataset.c;
-  if (b.dataset.slot) next[b.dataset.slot] = cur.acc[b.dataset.slot] === b.dataset.id ? null : (b.dataset.id || null); // 한 번 더 누르면 벗기
-  update(roomRef(room.code, 'players', playerId), { char: next });
+  if (!b || !room || !me() || !animalOf(b.dataset.a)) return;
+  update(roomRef(room.code, 'players', playerId), { char: { a: b.dataset.a } });
 });
 let lastChatAt = 0;
 $('#chat-form').addEventListener('submit', (e) => {
@@ -975,23 +964,25 @@ const hashOf = (id, salt = 0) => {
   for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
   return h;
 };
-// 고른 캐릭터가 없으면 아이디로 정해지는 기본 캐릭터
-// 캐릭터 = 몸 색 + 액세서리(머리, 눈, 얼굴, 목). e는 목록에 쓰는 대표 이모지
+// 캐릭터 = 동물 하나. 고르지 않았으면 아이디로 정해지는 기본 동물. e는 목록에 쓰는 이모지
 function charOf(p) {
-  const c = AVATAR_COLORS.includes(p?.char?.c) ? p.char.c : AVATAR_COLORS[hashOf(p?.id, 7) % AVATAR_COLORS.length];
-  const acc = cleanAcc(p?.char);
-  return { c, acc, e: glyphOf(acc) };
+  const animal = animalOf(p?.char?.a) || ANIMALS[hashOf(p?.id, 7) % ANIMALS.length];
+  return { a: animal.id, e: animal.emoji, label: animal.label };
 }
-// 광장 위치 (0~1). 아직 안 움직였으면 아이디로 정해지는 자리
+function animalIcon(p, cls = '') {
+  const { a, label } = charOf(p);
+  return `<img class="${cls}" src="${animalImg(a, 'icon')}" alt="${label}">`;
+}
+// 광장 위치 (0~1, 배경 그림 기준, y는 발 위치). 아직 안 움직였으면 아이디로 정해지는 자리
+// 광장 밖 좌표(예전 3D 광장 위치 등)는 광장이 바닥 안쪽으로 맞춤
 function posOf(p) {
   const ok = (v) => typeof v === 'number' && v >= 0 && v <= 1;
   if (ok(p?.pos?.x) && ok(p?.pos?.y)) return p.pos;
-  return { x: 0.12 + ((hashOf(p.id, 3) % 1000) / 1000) * 0.76, y: 0.3 + ((hashOf(p.id, 5) % 1000) / 1000) * 0.45 };
+  return { x: 0.25 + ((hashOf(p.id, 3) % 1000) / 1000) * 0.5, y: 0.52 + ((hashOf(p.id, 5) % 1000) / 1000) * 0.26 };
 }
 
 function avatar(p) {
-  const { e, c } = charOf(p);
-  return `<span class="avatar" style="background:${c};font-size:18px">${e}`
+  return `<span class="avatar avatar-animal">${animalIcon(p)}`
     + `<span class="badge-dot ${p.online ? '' : 'off'}" title="${p.online ? '접속 중' : '연결 끊김'}"></span></span>`;
 }
 
@@ -999,82 +990,21 @@ function avatar(p) {
 const BUBBLE_MS = 6000;
 const chatList = () => Object.entries(room?.chat || {}).sort(([a], [b]) => (a < b ? -1 : 1)).map(([id, m]) => ({ id, ...m }));
 
-// 3D 광장: three.js를 불러올 수 있고 WebGL이 되면 3D, 아니면 아래 2D 광장
-let plaza3d = null;
-let plaza3dState = 'idle'; // idle → loading → ready | failed
-function webglOk() {
-  try {
-    const c = document.createElement('canvas');
-    return !!(c.getContext('webgl2') || c.getContext('webgl'));
-  } catch { return false; }
-}
-function loadPlaza3D() {
-  if (plaza3dState !== 'idle') return;
-  if (!webglOk()) { plaza3dState = 'failed'; return; }
-  plaza3dState = 'loading';
-  import('./plaza3d.js?v=6')
-    .then(({ createPlaza3D }) => {
-      const el = $('#plaza');
-      plaza3d = createPlaza3D(el, {
-        onMove: (x, y, run) => room && me() && update(roomRef(room.code, 'players', playerId), { pos: { x, y, run: !!run } }),
-        onJump: () => room && me() && update(roomRef(room.code, 'players', playerId), { jumpAt: serverTimestamp() }),
-      });
-      el.classList.add('is-3d');
-      el.querySelectorAll('.pz').forEach((n) => el.removeChild(n));
-      plaza3dState = 'ready';
-      if (room && phase() === 'lobby') renderPlaza();
-      else plaza3d.pause();
-    })
-    .catch((e) => {
-      console.warn('3D 광장을 불러오지 못해 2D로 표시해요.', e);
-      plaza3dState = 'failed';
-    });
-}
-
+// 광장: 배경 그림 위를 동물이 걸어다님 (plaza2d.js)
+let plaza = null;
 function renderPlaza() {
-  const el = $('#plaza');
-  loadPlaza3D();
-  if (plaza3d) {
-    plaza3d.resume();
-    plaza3d.update(room.players.map((p) => ({
-      id: p.id, name: p.name, ...charOf(p), ...posOf(p), run: !!p.pos?.run,
-      jumpAt: p.jumpAt || null, jumpAgo: p.jumpAt ? now() - p.jumpAt : Infinity,
-      online: p.online, me: p.id === playerId,
-    })));
-    renderBubbles();
-    return;
+  if (!plaza) {
+    plaza = createPlaza($('#plaza'), {
+      onMove: (x, y, run) => room && me() && update(roomRef(room.code, 'players', playerId), { pos: { x, y, run: !!run } }),
+      onJump: () => room && me() && update(roomRef(room.code, 'players', playerId), { jumpAt: serverTimestamp() }),
+    });
   }
-  const keep = new Set();
-  for (const p of room.players) {
-    keep.add(p.id);
-    let node = [...el.querySelectorAll('.pz')].find((n) => n.dataset.pid === p.id);
-    if (!node) {
-      node = document.createElement('div');
-      node.className = 'pz';
-      node.dataset.pid = p.id;
-      node.innerHTML = '<div class="bubble"></div><div class="body"></div><div class="nm"></div>';
-      el.appendChild(node);
-    }
-    const { e, c } = charOf(p);
-    const { x, y } = posOf(p);
-    node.classList.toggle('me', p.id === playerId);
-    node.classList.toggle('off', !p.online);
-    const body = node.querySelector('.body');
-    body.textContent = e;
-    body.style.background = c;
-    node.querySelector('.nm').textContent = p.name;
-    const key = `${x},${y}`;
-    if (node.dataset.pos && node.dataset.pos !== key) {
-      node.classList.remove('walk');
-      void node.offsetWidth;
-      node.classList.add('walk');
-    }
-    node.dataset.pos = key;
-    node.style.left = `${x * 100}%`;
-    node.style.top = `${y * 100}%`;
-  }
-  // 나간 사람의 캐릭터는 광장에서 치움
-  el.querySelectorAll('.pz').forEach((n) => { if (!keep.has(n.dataset.pid)) el.removeChild(n); });
+  plaza.resume();
+  plaza.update(room.players.map((p) => ({
+    id: p.id, name: p.name, ...charOf(p), ...posOf(p), run: !!p.pos?.run,
+    jumpAt: p.jumpAt || null, jumpAgo: p.jumpAt ? now() - p.jumpAt : Infinity,
+    online: p.online, me: p.id === playerId,
+  })));
   renderBubbles();
 }
 
@@ -1084,26 +1014,21 @@ function renderBubbles() {
   const latest = new Map();
   const cutoff = now() - BUBBLE_MS;
   for (const m of chatList()) if (typeof m.t === 'number' && m.t >= cutoff) latest.set(m.pid, m.text);
-  if (plaza3d) { plaza3d.setBubbles(latest); return; }
-  $$('#plaza .pz').forEach((n) => {
-    const text = latest.get(n.dataset.pid) || '';
-    const b = n.querySelector('.bubble');
-    if (b.textContent !== text) b.textContent = text;
-  });
+  plaza?.setBubbles(latest);
 }
 
 let chatSig = null;
 function renderChat() {
   const msgs = chatList().slice(-50);
   const last = msgs[msgs.length - 1];
-  const sig = `${msgs.length}/${last?.id || ''}/${last?.t || ''}/${room.players.map((p) => charOf(p).e).join('')}`;
+  const sig = `${msgs.length}/${last?.id || ''}/${last?.t || ''}/${room.players.map((p) => charOf(p).a).join(',')}`;
   if (sig === chatSig) return;
   chatSig = sig;
   const log = $('#chat-log');
   const nearBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
   log.innerHTML = msgs.map((m) => {
     const p = room.players.find((x) => x.id === m.pid);
-    const e = p ? charOf(p).e : esc(safeGlyph(m.e));
+    const e = p ? animalIcon(p, 'em-img') : esc(safeGlyph(m.e));
     return `<li class="${m.pid === playerId ? 'me' : ''}"><span class="who"><span class="em">${e}</span>${esc(p?.name || m.name)}</span><span class="txt">${esc(m.text)}</span></li>`;
   }).join('');
   if (nearBottom || last?.pid === playerId) log.scrollTop = log.scrollHeight;
@@ -1111,16 +1036,12 @@ function renderChat() {
 
 function renderPicker() {
   const mine = charOf(me());
-  const box = $('#char-acc');
+  const box = $('#char-animals');
   if (!box.children.length) {
-    $('#char-colors').innerHTML = AVATAR_COLORS.map((c) => `<button type="button" data-c="${c}" style="background:${c}" aria-label="몸 색 ${c}"></button>`).join('');
-    box.innerHTML = SLOTS.map((s) => `<div class="acc-slot"><div class="form-label">${s.label}</div><div class="acc-grid">`
-      + `<button type="button" data-slot="${s.key}" data-id="">없음</button>`
-      + s.items.map((it) => `<button type="button" data-slot="${s.key}" data-id="${it.id}"><span class="em">${it.emoji}</span>${it.label}</button>`).join('')
-      + '</div></div>').join('');
+    box.innerHTML = ANIMALS.map((a) => `<button type="button" data-a="${a.id}" aria-label="${a.label}">`
+      + `<img src="${animalImg(a.id, 'icon')}" alt=""><span>${a.label}</span></button>`).join('');
   }
-  $$('#char-colors button').forEach((b) => b.classList.toggle('active', b.dataset.c === mine.c));
-  $$('#char-acc button').forEach((b) => b.classList.toggle('active', (mine.acc[b.dataset.slot] || '') === b.dataset.id));
+  $$('#char-animals button').forEach((b) => b.classList.toggle('active', b.dataset.a === mine.a));
 }
 function playerRow(p, extra = '') {
   const tags = [];
@@ -1135,7 +1056,7 @@ function render() {
   const ph = phase();
   lastPhase = ph;
   $('#ext-installed').classList.toggle('hidden', !ext.ready);
-  if (ph !== 'lobby') plaza3d?.pause();
+  if (ph !== 'lobby') plaza?.pause();
   if (ph === 'home') { syncExt(); return showHome(); }
   unwatchLobbies();
   unwatchDaily();

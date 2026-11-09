@@ -552,92 +552,66 @@ code {
 
 /* ---------- 대기실 광장 ---------- */
 .btn-sm { height: 24px; padding: 0 7px; font-size: 14px; border-radius: var(--radius-sm); }
-.char-picker { padding: 12px 24px 4px; border-bottom: 1px solid var(--color-border-secondary); }
-.char-picker .form-label { margin-bottom: 6px; }
-.char-grid { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
-.char-grid button {
-  width: 36px; height: 36px; padding: 0; border-radius: 50%; font-size: 20px; line-height: 1;
-  border: 1px solid var(--color-border); background: var(--color-bg-container); cursor: pointer;
-  transition: all var(--motion);
+.char-picker { padding: 12px 24px; border-bottom: 1px solid var(--color-border-secondary); }
+.animal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 8px; }
+.animal-grid button {
+  display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 4px 6px;
+  border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-bg-container);
+  color: var(--color-text); font: inherit; font-size: 12px; cursor: pointer;
 }
-.char-grid button:hover { border-color: var(--color-primary); }
-.char-grid button.active { border-color: var(--color-primary); box-shadow: 0 0 0 2px var(--color-primary-bg), 0 0 0 3px var(--color-primary); }
-.char-grid.colors button { width: 28px; height: 28px; border: 0; }
-.acc-slot { margin-bottom: 10px; }
-.acc-slot .form-label { margin-bottom: 6px; }
-.acc-grid { display: flex; flex-wrap: wrap; gap: 6px; }
-.acc-grid button {
-  display: inline-flex; align-items: center; gap: 4px; height: 30px; padding: 0 10px; font: inherit; font-size: 13px;
-  border: 1px solid var(--color-border); border-radius: 16px; background: var(--color-bg-container); color: var(--color-text);
-  cursor: pointer; transition: all var(--motion);
-}
-.acc-grid button .em { font-size: 16px; line-height: 1; }
-.acc-grid button:hover { border-color: var(--color-primary); color: var(--color-primary); }
-.acc-grid button.active { border-color: var(--color-primary); background: var(--color-primary-bg); color: var(--color-primary); font-weight: 500; }
-.acc-tip { margin: 2px 0 12px; }
+.animal-grid button img { width: 44px; height: auto; display: block; }
+.animal-grid button:hover { border-color: var(--color-primary); color: var(--color-primary); }
+.animal-grid button.active { border-color: var(--color-primary); background: var(--color-primary-bg); color: var(--color-primary); font-weight: 500; box-shadow: 0 0 0 1px var(--color-primary); }
+.avatar-animal { background: transparent; }
+.avatar-animal > img { width: 100%; height: 100%; object-fit: contain; display: block; border-radius: 8px; }
+.chat-log .who .em-img { width: 18px; height: auto; vertical-align: -3px; margin-right: 4px; border-radius: 4px; }
+/* 대기실 광장 (2D) */
 .plaza {
-  position: relative; height: 280px; overflow: hidden; cursor: pointer; user-select: none; touch-action: manipulation;
-  background:
-    radial-gradient(circle, var(--color-border) 1px, transparent 1.5px) 0 0 / 22px 22px,
-    linear-gradient(var(--color-primary-bg), var(--color-bg-container));
+  position: relative; aspect-ratio: 1672 / 941; overflow: hidden; user-select: none; -webkit-user-select: none; touch-action: manipulation;
+  background: #bfe3ff url('img/lobby.webp?v=1') center / 100% 100% no-repeat;
   border-bottom: 1px solid var(--color-border-secondary);
 }
-.plaza-hint { position: absolute; left: 0; right: 0; bottom: 8px; margin: 0; text-align: center; font-size: 12px; color: var(--color-text-tertiary); pointer-events: none; }
-.pz {
-  position: absolute; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center;
-  transition: left 0.7s cubic-bezier(.4,0,.2,1), top 0.7s cubic-bezier(.4,0,.2,1); pointer-events: none; z-index: 1;
+.plaza-hint {
+  position: absolute; left: 50%; bottom: 6px; transform: translateX(-50%); z-index: 3000; margin: 0; pointer-events: none;
+  font-size: 12px; white-space: nowrap; padding: 1px 10px; border-radius: 10px; color: #434343; background: rgba(255,255,255,.75);
 }
-.pz.me { z-index: 2; }
-.pz .body {
-  width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; font-size: 26px; line-height: 1;
-  box-shadow: 0 2px 6px rgba(0,0,0,.18); border: 2px solid #fff;
+.pz2 { position: absolute; inset: 0; cursor: pointer; }
+.pz2-layer { position: absolute; inset: 0; pointer-events: none; }
+.pz2-ch { position: absolute; left: 0; top: 0; width: 0; height: 0; }
+.pz2-ch .fig { position: absolute; left: 0; bottom: 0; transform-origin: 50% 100%; }
+.pz2-ch .fig img { height: 100%; width: auto; display: block; filter: drop-shadow(0 1px 1px rgba(0,0,0,.12)); }
+.pz2-ch .fig img.flip { transform: scaleX(-1); }
+.pz2-ch .shadow {
+  position: absolute; left: 0; top: 0; width: 46px; height: 12px; border-radius: 50%;
+  background: radial-gradient(rgba(0,0,0,.28), rgba(0,0,0,0) 70%);
 }
-.pz.me .body { box-shadow: 0 0 0 3px var(--color-primary), 0 2px 6px rgba(0,0,0,.18); }
-.pz.off .body { opacity: .45; filter: grayscale(.6); }
-.pz.walk .body { animation: pz-bob .35s ease-in-out 2; }
-@keyframes pz-bob { 50% { transform: translateY(-4px); } }
-.pz .nm {
-  margin-top: 4px; max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-size: 12px; font-weight: 500; padding: 0 6px; border-radius: 10px;
-  background: var(--color-bg-elevated); color: var(--color-text); box-shadow: 0 1px 2px rgba(0,0,0,.08);
+.pz2-ch.me .shadow { background: radial-gradient(rgba(22,119,255,.55), rgba(22,119,255,0) 72%); }
+.pz2-ch.off .fig { opacity: .5; filter: grayscale(.7); }
+.pz2-ch .label { position: absolute; left: 0; bottom: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.pz2-ch .nm {
+  max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 12px; font-weight: 500; padding: 0 7px; border-radius: 10px; line-height: 18px;
+  background: rgba(255,255,255,.92); color: #262626; box-shadow: 0 1px 3px rgba(0,0,0,.18);
 }
-.pz .bubble {
-  position: absolute; bottom: calc(100% + 2px); left: 50%; transform: translateX(-50%);
-  width: max-content; max-width: 180px; padding: 5px 10px; border-radius: 12px; font-size: 13px; line-height: 1.4;
-  background: var(--color-bg-elevated); color: var(--color-text); box-shadow: var(--shadow-elevated);
-  word-break: break-word; animation: pz-pop .2s ease-out;
+.pz2-ch.me .nm { color: #fff; background: var(--color-primary); }
+.pz2-ch.off .nm { opacity: .6; }
+.pz2-ch .bubble {
+  position: relative; width: max-content; max-width: 190px; padding: 5px 10px; border-radius: 12px; font-size: 13px; line-height: 1.4;
+  background: #fff; color: #262626; box-shadow: 0 2px 8px rgba(0,0,0,.18); word-break: break-word; margin-bottom: 4px;
+  animation: pz-pop .2s ease-out;
 }
-.pz .bubble::after {
+.pz2-ch .bubble::after {
   content: ''; position: absolute; top: 100%; left: 50%; margin-left: -6px;
-  border: 6px solid transparent; border-top-color: var(--color-bg-elevated);
+  border: 6px solid transparent; border-top-color: #fff;
 }
-.pz .bubble:empty { display: none; }
-@keyframes pz-pop { from { opacity: 0; transform: translate(-50%, 4px) scale(.9); } }
-/* 3D 광장 */
-.plaza.is-3d { height: 340px; cursor: default; background: linear-gradient(var(--color-primary-bg), var(--color-bg-container)); }
-.plaza.is-3d .plaza-hint { z-index: 3; }
-.pz3 { position: absolute; inset: 0; }
-.pz3 canvas { display: block; width: 100%; height: 100%; cursor: pointer; outline: none; }
-.pz3-labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
-.pz3-label { position: absolute; left: 0; top: 0; width: 0; height: 0; }
-.pz3-label .nm {
-  position: absolute; left: 0; top: 0; transform: translate(-50%, -100%);
-  max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-size: 12px; font-weight: 500; padding: 0 7px; border-radius: 10px;
-  background: var(--color-bg-elevated); color: var(--color-text); box-shadow: 0 1px 3px rgba(0,0,0,.15);
+.pz2-ch .bubble:empty { display: none; }
+@keyframes pz-pop { from { opacity: 0; transform: translateY(4px) scale(.9); } }
+.pz2-dust {
+  position: absolute; left: -6px; top: -6px; width: 12px; height: 12px; border-radius: 50%; background: rgba(255,255,255,.85);
+  animation: pz2-dust .45s ease-out forwards;
 }
-.pz3-label.me .nm { color: #fff; background: var(--color-primary); }
-.pz3-label.off .nm { opacity: .55; }
-.pz3-label .bubble {
-  position: absolute; left: 0; top: -26px; transform: translate(-50%, -100%);
-  width: max-content; max-width: 190px; padding: 5px 10px; border-radius: 12px; font-size: 13px; line-height: 1.4;
-  background: var(--color-bg-elevated); color: var(--color-text); box-shadow: var(--shadow-elevated); word-break: break-word;
-}
-.pz3-label .bubble::after {
-  content: ''; position: absolute; top: 100%; left: 50%; margin-left: -6px;
-  border: 6px solid transparent; border-top-color: var(--color-bg-elevated);
-}
-.pz3-label .bubble:empty { display: none; }
+@keyframes pz2-dust { to { opacity: 0; margin-top: -8px; scale: 1.8; } }
+.pz2 .pz3-pad, .pz2 .pz3-acts { z-index: 3001; }
 .pz3-pad {
   position: absolute; right: 10px; bottom: 26px; z-index: 4; display: none;
   grid-template: ". u ." 36px "l d r" 36px / 36px 36px 36px; gap: 4px;
@@ -658,7 +632,6 @@ code {
 }
 .pz3-acts button[aria-pressed="true"], .pz3-acts button:active { background: var(--color-primary); color: #fff; }
 @media (pointer: coarse) { .pz3-pad, .pz3-acts { display: grid; } .pz3-acts { display: flex; } }
-@media (max-width: 480px) { .plaza.is-3d { height: 300px; } }
 .chat-log { list-style: none; margin: 0; padding: 8px 24px; height: 150px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
 .chat-log li { display: flex; gap: 6px; align-items: baseline; font-size: 14px; line-height: 1.5; }
 .chat-log .who { flex: none; font-weight: 600; }
@@ -670,7 +643,7 @@ code {
 .chat-form { display: flex; gap: 8px; padding: 12px 24px 16px; border-top: 1px solid var(--color-border-secondary); }
 .chat-form .input { flex: 1; min-width: 0; }
 @media (max-width: 480px) {
-  .plaza { height: 240px; }
+  .plaza-hint { display: none; }
   .chat-log, .chat-form, .char-picker { padding-left: 16px; padding-right: 16px; }
 }
 
