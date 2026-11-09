@@ -1765,7 +1765,6 @@ function renderProfile() {
 
 // ---------- 닉네임 변경 (300포인트) ----------
 $('#btn-nick').onclick = () => {
-  $('#nick-have').textContent = `${(profile.points || 0).toLocaleString()}P`;
   $('#nick-desc').innerHTML = nickConflict ? '같은 닉네임을 쓰는 사람이 있어서 <b>무료로</b> 바꿀 수 있어요.'
     : `300포인트를 써서 닉네임을 바꿔요. 지금 <b>${(profile.points || 0).toLocaleString()}P</b> 있어요.`;
   $('#nick-submit').textContent = nickConflict ? '무료로 변경' : '300P 쓰고 변경';
@@ -1774,6 +1773,7 @@ $('#btn-nick').onclick = () => {
   $('#nick-dialog').showModal();
   $('#nick-new').focus();
 };
+$('#nick-cancel').onclick = () => $('#nick-dialog').close();
 $('#nick-form').addEventListener('submit', async (e) => {
   if (e.submitter?.value !== 'ok') return;
   e.preventDefault();
@@ -1790,6 +1790,7 @@ $('#nick-form').addEventListener('submit', async (e) => {
     const oldKey = nickKey(profile.nick);
     const [newOwner, oldOwner, taken] = await Promise.all([nickOwner(nick), nickOwner(profile.nick), nickTakenBy(nick, uid)]);
     if (taken) { $('#nick-error').textContent = '이미 다른 사람이 쓰는 닉네임이에요.'; return; }
+    if (!$('#nick-dialog').open) return; // 확인하는 사이에 취소했으면 바꾸지 않음
     const updates = { [`users/${uid}/nick`]: nick };
     if (cost) updates[`users/${uid}/points`] = profile.points - cost;
     if (newOwner !== uid) updates[`nicks/${newKey}`] = uid;

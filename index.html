@@ -479,13 +479,13 @@
   <dialog id="nick-dialog" class="modal">
     <form method="dialog" id="nick-form">
       <div class="modal-title">닉네임 변경</div>
-      <p class="text-secondary" id="nick-desc">300포인트를 써서 닉네임을 바꿔요. 지금 <b id="nick-have"></b> 있어요.</p>
+      <p class="text-secondary" id="nick-desc">300포인트를 써서 닉네임을 바꿔요. 지금 포인트를 확인하는 중이에요.</p>
       <p class="text-tertiary small">다른 사람이 쓰는 닉네임은 쓸 수 없어요. (대소문자·띄어쓰기만 다른 것도 같은 닉네임이에요)</p>
       <input id="nick-new" class="input input-lg" maxlength="8" placeholder="새 닉네임 (8글자까지)" />
       <p id="nick-error" class="form-error"></p>
       <div class="modal-footer">
-        <button value="cancel" class="btn" formnovalidate>취소</button>
-        <button value="ok" id="nick-submit" class="btn btn-primary">300P 쓰고 변경</button>
+        <button type="button" id="nick-cancel" class="btn">취소</button>
+        <button type="submit" value="ok" id="nick-submit" class="btn btn-primary">300P 쓰고 변경</button>
       </div>
     </form>
   </dialog>
@@ -493,6 +493,6 @@
   <div id="toast" class="message" role="status"></div>
 
   <!-- 코드를 바꾸면 ?v= 숫자를 올려서 브라우저 캐시에 남은 옛 파일을 쓰지 않게 함 -->
-  <script type="module" src="app.js?v=49"></script>
+  <script type="module" src="app.js?v=50"></script>
 </body>
 </html>
