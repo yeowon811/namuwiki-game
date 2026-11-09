@@ -56,6 +56,38 @@
             ".write": "auth != null && (auth.uid === $uid || (root.child('users').child(auth.uid).child('approved').val() === true && !root.child('dailyPaid').child(newData.parent().parent().child('lastDaily/date').val()).exists() && newData.parent().parent().parent().parent().child('dailyPaid').child(newData.parent().parent().child('lastDaily/date').val()).exists()))",
             ".validate": "newData.isNumber() && (!data.exists() || newData.val() >= data.val())"
           }
+        },
+        "owned": {
+          "animals": {
+            "$a": {
+              ".write": "auth != null && ((auth.uid === $uid && newData.exists()) || root.child('admins').child(auth.uid).val() === true)",
+              ".validate": "newData.val() === true && $a.matches(/^(rabbit|penguin|chick|panda|dog|dinosaur|bear|fox|sheep)$/) && (data.exists() || root.child('admins').child(auth.uid).val() === true || newData.parent().parent().parent().child('points').val() === data.parent().parent().parent().child('points').val() - 500)"
+            }
+          },
+          "acc": {
+            "$i": {
+              ".write": "auth != null && ((auth.uid === $uid && newData.exists()) || root.child('admins').child(auth.uid).val() === true)",
+              ".validate": "newData.val() === true && $i.matches(/^(crown|tophat|ribbon|flower|sunglasses|glasses|scarf|medal)$/) && (data.exists() || root.child('admins').child(auth.uid).val() === true || newData.parent().parent().parent().child('points').val() === data.parent().parent().parent().child('points').val() - 300)"
+            }
+          }
+        },
+        "look": {
+          ".write": "auth != null && auth.uid === $uid",
+          "a": {
+            ".validate": "newData.isString() && (newData.val() === 'cat' || newData.parent().parent().child('owned/animals').child(newData.val()).val() === true)"
+          },
+          "head": {
+            ".validate": "newData.isString() && newData.val().matches(/^(crown|tophat|ribbon|flower)$/) && newData.parent().parent().child('owned/acc').child(newData.val()).val() === true"
+          },
+          "eyes": {
+            ".validate": "newData.isString() && newData.val().matches(/^(sunglasses|glasses)$/) && newData.parent().parent().child('owned/acc').child(newData.val()).val() === true"
+          },
+          "neck": {
+            ".validate": "newData.isString() && newData.val().matches(/^(scarf|medal)$/) && newData.parent().parent().child('owned/acc').child(newData.val()).val() === true"
+          },
+          "$other": {
+            ".validate": false
+          }
         }
       }
     },
@@ -124,6 +156,23 @@
             },
             "path": {
               ".validate": "newData.hasChildren()"
+            },
+            "char": {
+              "a": {
+                ".validate": "newData.isString() && (newData.val() === 'cat' || root.child('users').child($pid).child('owned/animals').child(newData.val()).val() === true)"
+              },
+              "head": {
+                ".validate": "newData.isString() && newData.val().matches(/^(crown|tophat|ribbon|flower)$/) && root.child('users').child($pid).child('owned/acc').child(newData.val()).val() === true"
+              },
+              "eyes": {
+                ".validate": "newData.isString() && newData.val().matches(/^(sunglasses|glasses)$/) && root.child('users').child($pid).child('owned/acc').child(newData.val()).val() === true"
+              },
+              "neck": {
+                ".validate": "newData.isString() && newData.val().matches(/^(scarf|medal)$/) && root.child('users').child($pid).child('owned/acc').child(newData.val()).val() === true"
+              },
+              "$other": {
+                ".validate": false
+              }
             }
           }
         }

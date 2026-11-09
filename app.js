@@ -7,8 +7,11 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
 import { firebaseConfig } from './firebase-config.js';
 import KEYWORDS from './keywords.js';
-import { ANIMALS, animalOf, animalImg } from './animals.js';
-import { createPlaza } from './plaza2d.js?v=1';
+import {
+  ANIMALS, ACCESSORIES, SLOTS, ANIMAL_PRICE, ACC_PRICE,
+  animalOf, accOf, animalImg, accHtml, cleanLook, ownsAnimal, ownsAcc,
+} from './animals.js';
+import { createPlaza } from './plaza2d.js?v=2';
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
@@ -294,7 +297,7 @@ async function createRoom(name) {
     state: 'lobby',
     round: 0,
     createdAt: serverTimestamp(),
-    players: { [playerId]: { name, status: 'waiting', online: true, joinedAt: serverTimestamp() } },
+    players: { [playerId]: { name, status: 'waiting', online: true, joinedAt: serverTimestamp(), char: myLook() } },
   });
   enterRoom(code);
 }
@@ -305,14 +308,14 @@ async function joinRoom(code, name) {
   const players = snap.val().players || {};
   if (snap.val().kicked?.[playerId]) throw new Error('방장이 이 방에서 내보냈어요.');
   if (players[playerId]?.name) {
-    const patch = { online: true, offlineSince: null };
+    const patch = { online: true, offlineSince: null, char: myLook() };
     if (name) patch.name = name;
     await update(roomRef(code, 'players', playerId), patch);
   } else {
     if (!name) throw new Error('닉네임을 입력해주세요.');
     if (Object.keys(players).length >= MAX_PLAYERS) throw new Error(`방이 가득 찼어요. (최대 ${MAX_PLAYERS}명)`);
     // 게임 도중에 들어오면 'waiting'(관전) 상태로 있다가 다음 판부터 참가
-    await set(roomRef(code, 'players', playerId), { name, status: 'waiting', online: true, joinedAt: serverTimestamp() });
+    await set(roomRef(code, 'players', playerId), { name, status: 'waiting', online: true, joinedAt: serverTimestamp(), char: myLook() });
   }
   enterRoom(code);
 }
@@ -728,7 +731,7 @@ async function startDaily(name) {
     public: false,
     daily: { date, start: pz.start, targets: pz.targets },
     createdAt: serverTimestamp(),
-    players: { [playerId]: { name, status: 'waiting', online: true, joinedAt: serverTimestamp() } },
+    players: { [playerId]: { name, status: 'waiting', online: true, joinedAt: serverTimestamp(), char: myLook() } },
   });
   dailyAutoStart = code;
   enterRoom(code);
@@ -827,8 +830,9 @@ $('#btn-char').onclick = (e) => {
 };
 $('#char-picker').addEventListener('click', (e) => {
   const b = e.target.closest('button');
-  if (!b || !room || !me() || !animalOf(b.dataset.a)) return;
-  update(roomRef(room.code, 'players', playerId), { char: { a: b.dataset.a } });
+  if (!b || b.disabled || !room || !me()) return;
+  if (b.dataset.a) equip({ a: b.dataset.a });
+  else if (b.dataset.acc) toggleAcc(b.dataset.acc);
 });
 let lastChatAt = 0;
 $('#chat-form').addEventListener('submit', (e) => {
@@ -964,10 +968,33 @@ const hashOf = (id, salt = 0) => {
   for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
   return h;
 };
-// 캐릭터 = 동물 하나. 고르지 않았으면 아이디로 정해지는 기본 동물. e는 목록에 쓰는 이모지
+// 캐릭터 = 동물 하나 + 부위별 액세서리. 고르지 않았으면 고양이. e는 목록에 쓰는 이모지
 function charOf(p) {
-  const animal = animalOf(p?.char?.a) || ANIMALS[hashOf(p?.id, 7) % ANIMALS.length];
-  return { a: animal.id, e: animal.emoji, label: animal.label };
+  const look = cleanLook(p?.char);
+  const animal = animalOf(look.a);
+  return { ...look, e: animal.emoji, label: animal.label };
+}
+// 내가 착용 중인 모습 (가진 것만)
+const myLook = () => cleanLook(profile?.look, profile);
+
+// 착용 바꾸기: 내 계정에 저장하고, 방에 있으면 방에도 반영
+async function equip(patch) {
+  if (!authUser || !profile) return;
+  const look = cleanLook({ ...myLook(), ...patch }, profile);
+  const updates = { [`users/${authUser.uid}/look`]: look };
+  if (room && me()) updates[`rooms/${room.code}/players/${playerId}/char`] = look;
+  try { await update(ref(db), updates); } catch (e) { toast('바꾸지 못했어요. 다시 시도해주세요.', 'error'); console.warn(e); }
+}
+function toggleAcc(id) {
+  const it = accOf(id);
+  if (!it || !ownsAcc(profile, id)) return;
+  equip({ [it.slot]: myLook()[it.slot] === id ? null : id }); // 같은 걸 다시 누르면 벗기
+}
+
+// 캐릭터 그림 + 액세서리 (상점 미리보기 등)
+function lookFigure(look, view = 'front') {
+  const accs = SLOTS.map((s) => (look[s.key] ? `<div class="acc acc-${s.key}">${accHtml(accOf(look[s.key]))}</div>` : '')).join('');
+  return `<div class="charfig" data-view="${view}"><img src="${animalImg(look.a, view)}" alt="${animalOf(look.a).label}"><div class="accs">${accs}</div></div>`;
 }
 function animalIcon(p, cls = '') {
   const { a, label } = charOf(p);
@@ -1034,15 +1061,100 @@ function renderChat() {
   if (nearBottom || last?.pid === playerId) log.scrollTop = log.scrollHeight;
 }
 
+// 대기실의 캐릭터 고르기: 가진 것만 고를 수 있고, 잠긴 것은 자물쇠 + 가격
+let pickerSig = null;
 function renderPicker() {
   const mine = charOf(me());
-  const box = $('#char-animals');
-  if (!box.children.length) {
-    box.innerHTML = ANIMALS.map((a) => `<button type="button" data-a="${a.id}" aria-label="${a.label}">`
-      + `<img src="${animalImg(a.id, 'icon')}" alt=""><span>${a.label}</span></button>`).join('');
-  }
-  $$('#char-animals button').forEach((b) => b.classList.toggle('active', b.dataset.a === mine.a));
+  const sig = JSON.stringify([mine, profile?.owned || null]);
+  if (sig === pickerSig) return;
+  pickerSig = sig;
+  const lock = (price) => `<span class="lock">${icon('lock')}${price}P</span>`;
+  $('#char-animals').innerHTML = ANIMALS.map((a) => {
+    const own = ownsAnimal(profile, a.id);
+    return `<button type="button" data-a="${a.id}" class="${mine.a === a.id ? 'active' : ''} ${own ? '' : 'locked'}" ${own ? '' : 'disabled'} aria-label="${a.label}${own ? '' : ' (잠김)'}">`
+      + `<img src="${animalImg(a.id, 'icon')}" alt=""><span>${a.label}</span>${own ? '' : lock(ANIMAL_PRICE)}</button>`;
+  }).join('');
+  $('#char-accs').innerHTML = ACCESSORIES.map((it) => {
+    const own = ownsAcc(profile, it.id);
+    return `<button type="button" data-acc="${it.id}" class="${mine[it.slot] === it.id ? 'active' : ''} ${own ? '' : 'locked'}" ${own ? '' : 'disabled'} aria-label="${it.label}${own ? '' : ' (잠김)'}">`
+      + `${accHtml(it, 'acc-ico')}<span>${it.label}</span>${own ? '' : lock(ACC_PRICE)}</button>`;
+  }).join('');
 }
+
+// ---------- 상점 ----------
+let shopOpen = false;
+let shopTab = 'animals';
+function openShop() { shopOpen = true; showHome(); window.scrollTo(0, 0); }
+function closeShop() { shopOpen = false; showHome(); }
+function renderShop() {
+  const pts = profile?.points || 0;
+  const look = myLook();
+  $('#shop-points').textContent = `${pts.toLocaleString()}P`;
+  $('#shop-preview').innerHTML = lookFigure(look);
+  $$('#shop-tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === shopTab));
+  const card = ({ key, kind, label, art, price, own, on }) => {
+    let act;
+    if (on) act = kind === 'acc' ? `<button class="btn btn-sm" data-unequip="${key}">벗기</button>` : '<span class="tag tag-success">사용 중</span>';
+    else if (own) act = `<button class="btn btn-sm btn-primary" data-equip="${key}" data-kind="${kind}">${kind === 'acc' ? '착용하기' : '사용하기'}</button>`;
+    else act = `<button class="btn btn-sm ${pts >= price ? 'btn-primary' : ''}" data-buy="${key}" data-kind="${kind}" ${pts >= price ? '' : 'disabled'}>${pts >= price ? `${price}P 구매` : `${price}P · 포인트 부족`}</button>`;
+    return `<li class="shop-item ${own ? 'own' : 'locked'} ${on ? 'on' : ''}"><div class="art">${art}${own ? '' : `<span class="lockmark">${icon('lock')}</span>`}</div>`
+      + `<div class="nm">${label}</div><div class="act">${act}</div></li>`;
+  };
+  if (shopTab === 'animals') {
+    $('#shop-list').innerHTML = ANIMALS.map((a) => card({
+      key: a.id, kind: 'animal', label: a.label, art: `<img src="${animalImg(a.id, 'front')}" alt="">`,
+      price: ANIMAL_PRICE, own: ownsAnimal(profile, a.id), on: look.a === a.id,
+    })).join('');
+  } else {
+    $('#shop-list').innerHTML = SLOTS.map((s) => `<li class="shop-slot">${s.label}</li>` + ACCESSORIES.filter((it) => it.slot === s.key).map((it) => card({
+      key: it.id, kind: 'acc', label: it.label, art: accHtml(it, 'acc-art'),
+      price: ACC_PRICE, own: ownsAcc(profile, it.id), on: look[it.slot] === it.id,
+    })).join('')).join('');
+  }
+}
+async function buyItem(kind, id) {
+  const uid = authUser?.uid;
+  if (!uid || !profile) return;
+  const isAnimal = kind === 'animal';
+  const item = isAnimal ? animalOf(id) : accOf(id);
+  if (!item) return;
+  if (isAnimal ? ownsAnimal(profile, id) : ownsAcc(profile, id)) return;
+  const price = isAnimal ? ANIMAL_PRICE : ACC_PRICE;
+  const pts = profile.points || 0;
+  if (pts < price) { toast('포인트가 부족해요.', 'error'); return; }
+  if (!confirm(`${item.label}을(를) ${price}P에 살까요?\n지금 ${pts.toLocaleString()}P → 구매 후 ${(pts - price).toLocaleString()}P`)) return;
+  // 포인트 차감 + 구매 기록 + 바로 착용 (서버 규칙이 가격만큼 줄었는지 확인)
+  const owned = { ...profile.owned, [isAnimal ? 'animals' : 'acc']: { ...(profile.owned?.[isAnimal ? 'animals' : 'acc'] || {}), [id]: true } };
+  const look = cleanLook({ ...myLook(), ...(isAnimal ? { a: id } : { [item.slot]: id }) }, { owned });
+  try {
+    await update(ref(db), {
+      [`users/${uid}/points`]: pts - price,
+      [`users/${uid}/owned/${isAnimal ? 'animals' : 'acc'}/${id}`]: true,
+      [`users/${uid}/look`]: look,
+    });
+    toast(`${item.label}을(를) 샀어요! (-${price}P)`, 'success');
+  } catch (e) {
+    console.warn(e);
+    toast('구매하지 못했어요. 잠시 후 다시 시도해주세요.', 'error');
+  }
+}
+$('#btn-shop').onclick = openShop;
+$('#btn-shop-back').onclick = closeShop;
+$('#shop-tabs').addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-tab]');
+  if (!b) return;
+  shopTab = b.dataset.tab;
+  renderShop();
+});
+$('#shop-list').addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (!b || b.disabled) return;
+  if (b.dataset.buy) guarded(b, () => buyItem(b.dataset.kind, b.dataset.buy));
+  else if (b.dataset.equip) {
+    if (b.dataset.kind === 'animal') equip({ a: b.dataset.equip });
+    else toggleAcc(b.dataset.equip);
+  } else if (b.dataset.unequip) toggleAcc(b.dataset.unequip);
+});
 function playerRow(p, extra = '') {
   const tags = [];
   if (p.id === room.hostId) tags.push('<span class="tag tag-warning">방장</span>');
@@ -1354,6 +1466,7 @@ onAuthStateChanged(auth, (user) => {
   profileUnsubs = [];
   profile = null;
   profileLoaded = false;
+  shopOpen = false;
   isAdmin = false;
   if (!user) {
     playerId = null;
@@ -1398,6 +1511,7 @@ function showHome() {
     $('#pending-who').textContent = `${profile.nick} (@${profile.id})`;
     return show('pending');
   }
+  if (shopOpen) { show('shop'); renderShop(); return; }
   show('home');
   renderProfile();
   watchLobbies();
@@ -1421,8 +1535,9 @@ const AVATAR_BG = (uid) => AVATAR_COLORS[hashOf(uid, 7) % AVATAR_COLORS.length];
 function renderProfile() {
   if (!profile) return;
   const st = profile.stats || {};
-  $('#pf-avatar').style.background = AVATAR_BG(authUser.uid);
-  $('#pf-avatar').textContent = [...profile.nick][0] || '?';
+  const look = myLook();
+  $('#pf-avatar').style.background = 'transparent';
+  $('#pf-avatar').innerHTML = `<img src="${animalImg(look.a, 'icon')}" alt="${animalOf(look.a).label}">`;
   $('#pf-nick').textContent = profile.nick;
   $('#pf-id').textContent = `@${profile.id}`;
   $('#pf-points').textContent = `${(profile.points || 0).toLocaleString()} 포인트`;

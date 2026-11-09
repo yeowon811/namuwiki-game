@@ -579,8 +579,24 @@ code {
 .pz2-layer { position: absolute; inset: 0; pointer-events: none; }
 .pz2-ch { position: absolute; left: 0; top: 0; width: 0; height: 0; }
 .pz2-ch .fig { position: absolute; left: 0; bottom: 0; transform-origin: 50% 100%; }
-.pz2-ch .fig img { height: 100%; width: auto; display: block; filter: drop-shadow(0 1px 1px rgba(0,0,0,.12)); }
-.pz2-ch .fig img.flip { transform: scaleX(-1); }
+.pz2-ch .fig .inner { position: relative; height: 100%; }
+.pz2-ch .fig .inner.flip { transform: scaleX(-1); }
+.pz2-ch .fig .inner > img { height: 100%; width: auto; display: block; filter: drop-shadow(0 1px 1px rgba(0,0,0,.12)); }
+/* 액세서리: 위치는 캐릭터 그림 높이 대비 %, 크기는 em (= 캐릭터 키) */
+.charfig .accs { position: absolute; inset: 0; pointer-events: none; }
+.charfig .acc { position: absolute; left: 50%; transform: translate(-50%, 50%); line-height: 1; }
+.charfig .acc > * { display: block; }
+.charfig .acc > span { font-size: .26em; }
+.charfig .acc > img { width: .4em; height: auto; }
+.charfig .acc-head { bottom: 90%; }
+.charfig .acc-eyes { bottom: 54%; }
+.charfig .acc-eyes > span { font-size: .22em; }
+.charfig .acc-neck { bottom: 35%; }
+.charfig .acc-neck > span { font-size: .18em; }
+.charfig[data-view="side"] .acc-head { left: 46%; }
+.charfig[data-view="side"] .acc-eyes { left: 34%; }
+.charfig[data-view="side"] .acc-neck { left: 44%; }
+.charfig[data-view="back"] .acc-eyes { display: none; }
 .pz2-ch .shadow {
   position: absolute; left: 0; top: 0; width: 46px; height: 12px; border-radius: 50%;
   background: radial-gradient(rgba(0,0,0,.28), rgba(0,0,0,0) 70%);
@@ -679,3 +695,40 @@ code {
   .results > li { padding: 14px 16px; }
   .page-title h1 { font-size: 20px; }
 }
+
+/* 캐릭터 그림 + 액세서리 (상점 미리보기) */
+.charfig { position: relative; display: inline-block; }
+.charfig > img { display: block; height: 100%; width: auto; }
+/* 대기실 캐릭터 고르기: 잠긴 것 */
+.char-picker .form-label { margin: 4px 0 6px; }
+.char-picker .animal-grid { margin-bottom: 10px; }
+.animal-grid button { position: relative; }
+.animal-grid button.locked { cursor: not-allowed; color: var(--color-text-tertiary); background: var(--color-fill-quaternary, rgba(0,0,0,.02)); }
+.animal-grid button.locked img, .animal-grid button.locked .acc-ico { opacity: .45; filter: grayscale(.8); }
+.animal-grid button.locked:hover { border-color: var(--color-border); color: var(--color-text-tertiary); }
+.animal-grid .lock { display: inline-flex; align-items: center; gap: 2px; font-size: 11px; color: var(--color-text-tertiary); }
+.animal-grid .acc-ico { font-size: 30px; line-height: 44px; height: 44px; }
+.animal-grid img.acc-ico { width: 44px; height: 44px; object-fit: contain; }
+.picker-tip { margin: 0; }
+/* 상점 */
+.shop-head { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
+.shop-preview { width: 140px; height: 150px; display: grid; place-items: end center; border-radius: 12px;
+  background: linear-gradient(#e6f4ff, #f6ffed); flex: none; padding-bottom: 6px; }
+.shop-preview .charfig { height: 130px; font-size: 130px; }
+.shop-pts { font-size: 28px; font-weight: 600; color: var(--color-primary); }
+.shop-tabs { margin: 0 0 16px; }
+.shop-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 12px; }
+.shop-slot { grid-column: 1 / -1; font-weight: 600; margin-top: 4px; }
+.shop-item { border: 1px solid var(--color-border-secondary); border-radius: 10px; padding: 12px 10px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px; background: var(--color-bg-container); }
+.shop-item.on { border-color: var(--color-primary); box-shadow: 0 0 0 1px var(--color-primary); }
+.shop-item .art { position: relative; height: 96px; display: grid; place-items: center; }
+.shop-item .art img { max-height: 96px; max-width: 100%; }
+.shop-item .art .acc-art { font-size: 56px; line-height: 1; }
+.shop-item .art img.acc-art { width: 72px; height: auto; }
+.shop-item.locked .art > img, .shop-item.locked .art .acc-art { filter: grayscale(.85); opacity: .55; }
+.shop-item .lockmark { position: absolute; right: -8px; top: 0; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--color-bg-elevated, #fff); color: var(--color-text-secondary); box-shadow: 0 1px 4px rgba(0,0,0,.15); }
+.shop-item .nm { font-weight: 500; }
+.shop-item .act .btn { white-space: nowrap; }
+.card-head .btn-shop { gap: 4px; }
+.avatar-lg > img { width: 100%; height: 100%; object-fit: contain; border-radius: 10px; }

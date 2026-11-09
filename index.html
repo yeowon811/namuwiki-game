@@ -6,7 +6,7 @@
   <title>나무위키 레이스</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" />
-  <link rel="stylesheet" href="style.css?v=20" />
+  <link rel="stylesheet" href="style.css?v=21" />
 </head>
 <body>
   <!-- 아이콘 모음 (Ant Design의 Outlined 스타일을 따라 그린 선 아이콘) -->
@@ -116,7 +116,7 @@
       </div>
 
       <div class="card">
-        <div class="card-head"><span class="card-title">시작하기</span></div>
+        <div class="card-head"><span class="card-title">시작하기</span><button id="btn-shop" class="btn btn-sm btn-shop" type="button">🛒 상점</button></div>
         <div class="card-body">
           <div class="profile">
             <span id="pf-avatar" class="avatar avatar-lg"></span>
@@ -195,6 +195,34 @@
     </section>
 
     <!-- 로비 -->
+    <!-- 상점: 캐릭터 500P, 액세서리 300P -->
+    <section id="screen-shop" class="screen hidden">
+      <div class="page-title">
+        <h1>상점</h1>
+        <p class="text-secondary">포인트로 캐릭터와 액세서리를 사요. 산 것은 대기실 광장에서 쓸 수 있어요.</p>
+      </div>
+      <div class="card">
+        <div class="card-head"><span class="card-title">내 캐릭터</span><button id="btn-shop-back" class="btn btn-sm" type="button">← 돌아가기</button></div>
+        <div class="card-body shop-head">
+          <div id="shop-preview" class="shop-preview"></div>
+          <div>
+            <div class="text-tertiary">내 포인트</div>
+            <div id="shop-points" class="shop-pts"></div>
+            <div class="text-tertiary small">캐릭터 500P · 액세서리 300P</div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-body">
+          <div id="shop-tabs" class="segmented shop-tabs" role="tablist">
+            <button type="button" data-tab="animals">캐릭터</button>
+            <button type="button" data-tab="acc">액세서리</button>
+          </div>
+          <ul id="shop-list" class="shop-list"></ul>
+        </div>
+      </div>
+    </section>
+
     <section id="screen-lobby" class="screen hidden">
       <div class="card">
         <div class="card-body room-box">
@@ -213,7 +241,11 @@
           <button id="btn-char" class="btn btn-sm" type="button" aria-expanded="false">내 캐릭터 고르기</button>
         </div>
         <div id="char-picker" class="char-picker hidden">
+          <div class="form-label">캐릭터</div>
           <div id="char-animals" class="animal-grid"></div>
+          <div class="form-label">액세서리 <span class="text-tertiary small">(부위마다 하나씩, 다시 누르면 벗기)</span></div>
+          <div id="char-accs" class="animal-grid"></div>
+          <p class="text-tertiary small picker-tip">잠긴 캐릭터·액세서리는 시작 화면의 🛒 상점에서 살 수 있어요.</p>
         </div>
         <div id="plaza" class="plaza" role="application" aria-label="대기실 광장. 누르면 그 자리로 이동해요.">
           <p class="plaza-hint">방향키(WASD)로 걷기 · Shift 달리기 · Space 점프 · 바닥을 눌러도 걸어가요</p>
@@ -429,6 +461,6 @@
   <div id="toast" class="message" role="status"></div>
 
   <!-- 코드를 바꾸면 ?v= 숫자를 올려서 브라우저 캐시에 남은 옛 파일을 쓰지 않게 함 -->
-  <script type="module" src="app.js?v=28"></script>
+  <script type="module" src="app.js?v=29"></script>
 </body>
 </html>
