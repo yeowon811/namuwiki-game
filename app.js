@@ -9,9 +9,9 @@ import { firebaseConfig } from './firebase-config.js';
 import KEYWORDS from './keywords.js';
 import {
   ANIMALS, ACCESSORIES, SLOTS, ANIMAL_PRICE, ACC_PRICE,
-  animalOf, accOf, animalImg, accHtml, cleanLook, ownsAnimal, ownsAcc,
-} from './animals.js?v=3';
-import { createPlaza } from './plaza2d.js?v=3';
+  animalOf, accOf, animalImg, accHtml, cleanLook, ownsAnimal, ownsAcc, lookAccHtml,
+} from './animals.js?v=4';
+import { createPlaza } from './plaza2d.js?v=4';
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
@@ -1066,8 +1066,7 @@ function toggleAcc(id) {
 
 // 캐릭터 그림 + 액세서리 (상점 미리보기 등)
 function lookFigure(look, view = 'front') {
-  const accs = SLOTS.map((s) => (look[s.key] ? `<div class="acc acc-${s.key}">${accHtml(accOf(look[s.key]))}</div>` : '')).join('');
-  return `<div class="charfig" data-view="${view}"><img src="${animalImg(look.a, view)}" alt="${animalOf(look.a).label}"><div class="accs">${accs}</div></div>`;
+  return `<div class="charfig"><img src="${animalImg(look.a, view)}" alt="${animalOf(look.a).label}"><div class="accs">${lookAccHtml(look, view)}</div></div>`;
 }
 function animalIcon(p, cls = '') {
   const { a, label } = charOf(p);

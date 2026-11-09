@@ -3,7 +3,7 @@
 // - 걷는 방향에 따라 앞·옆·뒷모습으로 바뀜, 뒤쪽(위)으로 갈수록 작게 보임
 // - 방향키 / WASD / 바닥 클릭 / 화면 방향 버튼으로 이동, Shift 달리기, Space 점프
 // 위치(x, y)는 배경 그림 기준 0~1 (y = 발 위치)
-import { animalImg, accOf, accHtml, SLOTS } from './animals.js?v=3';
+import { animalImg, lookAccHtml, VIEWS } from './animals.js?v=4';
 
 // 걸을 수 있는 바닥 (배경 그림의 타일 광장, 타원)
 const FLOOR = { cx: 0.5, cy: 0.635, rx: 0.38, ry: 0.245 };
@@ -13,7 +13,7 @@ const JUMP_MS = 600;
 const JUMP_H = 0.11; // 점프 높이 (광장 세로 대비)
 const SEND_MS = 150; // 내 위치를 서버에 보내는 간격
 const CHAR_H = 0.21; // 캐릭터 키 (광장 세로 대비, 맨 앞 기준)
-const VIEWS = ['front', 'side', 'back'];
+const STEP_MS = 190; // 걸을 때 옆모습 그림 두 장을 번갈아 보여주는 간격 (달리면 더 빠르게)
 
 export function clampFloor(x, y) {
   const u = (x - FLOOR.cx) / FLOOR.rx;
@@ -57,26 +57,16 @@ export function createPlaza(container, { onMove, onJump }) {
   const chars = new Map();
   let myId = null;
 
-  // 착용한 액세서리를 캐릭터 위에 얹음 (부위별 위치는 CSS .acc-head / .acc-eyes / .acc-neck)
-  function setAcc(c, p) {
-    const html = SLOTS.map((s) => {
-      const it = accOf(p[s.key]);
-      return it && it.slot === s.key ? `<div class="acc acc-${s.key}">${accHtml(it)}</div>` : '';
-    }).join('');
-    if (c.accHtml !== html) {
-      c.accHtml = html;
-      c.acc.innerHTML = html;
-    }
-  }
+  const lookOf = (p) => ({ a: p.a, head: p.head, eyes: p.eyes, neck: p.neck, body: p.body, feet: p.feet, back: p.back });
 
   function ensureChar(p) {
     let c = chars.get(p.id);
-    if (c && c.animal !== p.a) {
+    if (c) {
+      if (c.animal !== p.a) for (const v of VIEWS) new Image().src = animalImg(p.a, v);
       c.animal = p.a;
-      for (const v of VIEWS) new Image().src = animalImg(p.a, v);
-      c.view = null; // 그림 다시 고르기
+      c.look = lookOf(p);
+      return c;
     }
-    if (c) { setAcc(c, p); return c; }
     const node = document.createElement('div');
     node.className = 'pz2-ch';
     node.innerHTML = '<div class="shadow"></div><div class="fig"><div class="inner charfig"><img alt="" draggable="false"><div class="accs"></div></div></div>'
@@ -86,25 +76,34 @@ export function createPlaza(container, { onMove, onJump }) {
     const pos = clampFloor(p.x, p.y);
     c = {
       node, img: node.querySelector('img'), fig: node.querySelector('.fig'), inner: node.querySelector('.inner'),
-      acc: node.querySelector('.accs'), accHtml: '', label: node.querySelector('.label'),
-      animal: p.a, pos: { ...pos }, target: { ...pos }, facing: 'front', view: null,
-      moving: false, running: false, walkT: 0, jumpStart: -1e9, jumpAt: null, dustT: 0,
+      acc: node.querySelector('.accs'), accKey: '', label: node.querySelector('.label'),
+      animal: p.a, look: lookOf(p), pos: { ...pos }, target: { ...pos }, facing: 'front', view: null,
+      moving: false, running: false, walkT: 0, stepT: 0, frame: 0, jumpStart: -1e9, jumpAt: null, dustT: 0,
     };
     chars.set(p.id, c);
-    setAcc(c, p);
     return c;
   }
 
-  // 바라보는 방향 → 그림 (옆모습 그림은 왼쪽을 봄, 오른쪽은 뒤집음)
-  function setView(c) {
-    const view = c.facing === 'left' || c.facing === 'right' ? 'side' : c.facing === 'up' ? 'back' : 'front';
+  // 바라보는 방향 → 그림. 옆으로 걸을 땐 두 장(1, 2)을 번갈아 보여줌
+  function setView(c, dt) {
+    let view;
+    if (c.facing === 'left' || c.facing === 'right') {
+      if (c.moving) {
+        c.stepT += dt * 1000;
+        if (c.stepT > (c.running ? STEP_MS * 0.6 : STEP_MS)) { c.stepT = 0; c.frame = 1 - c.frame; }
+      } else c.frame = 0;
+      view = `${c.facing}${c.frame + 1}`;
+    } else view = c.facing === 'up' ? 'back' : 'front';
     const key = `${c.animal}/${view}`;
     if (c.view !== key) {
       c.view = key;
       c.img.src = animalImg(c.animal, view);
-      c.inner.dataset.view = view; // 액세서리 위치를 방향에 맞춤
     }
-    c.inner.classList.toggle('flip', c.facing === 'right');
+    const accKey = `${view}/${JSON.stringify(c.look)}`;
+    if (c.accKey !== accKey) {
+      c.accKey = accKey;
+      c.acc.innerHTML = lookAccHtml(c.look, view);
+    }
   }
   function faceToward(c, dxPx, dyPx) {
     if (Math.abs(dxPx) < 0.01 && Math.abs(dyPx) < 0.01) return;
@@ -243,7 +242,7 @@ export function createPlaza(container, { onMove, onJump }) {
           c.moving = false;
         }
       }
-      setView(c);
+      setView(c, dt);
       const run = c.moving && c.running;
       c.walkT = c.moving ? c.walkT + dt * (run ? 17 : 11) : 0;
       const s = depthScale(c.pos.y);
@@ -266,7 +265,7 @@ export function createPlaza(container, { onMove, onJump }) {
   raf = requestAnimationFrame(step);
 
   return {
-    // players: [{ id, name, a, head, eyes, neck, x, y, run, jumpAt, jumpAgo, online, me }]
+    // players: [{ id, name, a, head, eyes, neck, body, feet, back, x, y, run, jumpAt, jumpAgo, online, me }]
     update(players) {
       const keep = new Set();
       for (const p of players) {

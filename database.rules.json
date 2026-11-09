@@ -67,7 +67,7 @@
           "acc": {
             "$i": {
               ".write": "auth != null && ((auth.uid === $uid && newData.exists()) || root.child('admins').child(auth.uid).val() === true)",
-              ".validate": "newData.val() === true && $i.matches(/^(crown|tophat|ribbon|flower|sunglasses|glasses|scarf|medal)$/) && (data.exists() || root.child('admins').child(auth.uid).val() === true || newData.parent().parent().parent().child('points').val() === data.parent().parent().parent().child('points').val() - 300)"
+              ".validate": "newData.val() === true && $i.matches(/^(crown|beanie|cap|beret|glasses|sunglasses|heartglasses|bowtie|scarf|hoodie|raincoat|overalls|dress|sneakers|boots|backpack)$/) && (data.exists() || root.child('admins').child(auth.uid).val() === true || newData.parent().parent().parent().child('points').val() === data.parent().parent().parent().child('points').val() - 300)"
             }
           }
         },
@@ -77,13 +77,22 @@
             ".validate": "newData.isString() && (newData.val() === 'cat' || newData.parent().parent().child('owned/animals').child(newData.val()).val() === true)"
           },
           "head": {
-            ".validate": "newData.isString() && newData.val().matches(/^(crown|tophat|ribbon|flower)$/) && newData.parent().parent().child('owned/acc').child(newData.val()).val() === true"
+            ".validate": "newData.isString() && newData.val().matches(/^(crown|beanie|cap|beret)$/) && newData.parent().parent().child('owned/acc').child(newData.val()).val() === true"
           },
           "eyes": {
-            ".validate": "newData.isString() && newData.val().matches(/^(sunglasses|glasses)$/) && newData.parent().parent().child('owned/acc').child(newData.val()).val() === true"
+            ".validate": "newData.isString() && newData.val().matches(/^(glasses|sunglasses|heartglasses)$/) && newData.parent().parent().child('owned/acc').child(newData.val()).val() === true"
           },
           "neck": {
-            ".validate": "newData.isString() && newData.val().matches(/^(scarf|medal)$/) && newData.parent().parent().child('owned/acc').child(newData.val()).val() === true"
+            ".validate": "newData.isString() && newData.val().matches(/^(bowtie|scarf)$/) && newData.parent().parent().child('owned/acc').child(newData.val()).val() === true"
+          },
+          "body": {
+            ".validate": "newData.isString() && newData.val().matches(/^(hoodie|raincoat|overalls|dress)$/) && newData.parent().parent().child('owned/acc').child(newData.val()).val() === true"
+          },
+          "feet": {
+            ".validate": "newData.isString() && newData.val().matches(/^(sneakers|boots)$/) && newData.parent().parent().child('owned/acc').child(newData.val()).val() === true"
+          },
+          "back": {
+            ".validate": "newData.isString() && newData.val().matches(/^(backpack)$/) && newData.parent().parent().child('owned/acc').child(newData.val()).val() === true"
           },
           "$other": {
             ".validate": false
@@ -162,13 +171,22 @@
                 ".validate": "newData.isString() && (newData.val() === 'cat' || root.child('users').child($pid).child('owned/animals').child(newData.val()).val() === true)"
               },
               "head": {
-                ".validate": "newData.isString() && newData.val().matches(/^(crown|tophat|ribbon|flower)$/) && root.child('users').child($pid).child('owned/acc').child(newData.val()).val() === true"
+                ".validate": "newData.isString() && newData.val().matches(/^(crown|beanie|cap|beret)$/) && root.child('users').child($pid).child('owned/acc').child(newData.val()).val() === true"
               },
               "eyes": {
-                ".validate": "newData.isString() && newData.val().matches(/^(sunglasses|glasses)$/) && root.child('users').child($pid).child('owned/acc').child(newData.val()).val() === true"
+                ".validate": "newData.isString() && newData.val().matches(/^(glasses|sunglasses|heartglasses)$/) && root.child('users').child($pid).child('owned/acc').child(newData.val()).val() === true"
               },
               "neck": {
-                ".validate": "newData.isString() && newData.val().matches(/^(scarf|medal)$/) && root.child('users').child($pid).child('owned/acc').child(newData.val()).val() === true"
+                ".validate": "newData.isString() && newData.val().matches(/^(bowtie|scarf)$/) && root.child('users').child($pid).child('owned/acc').child(newData.val()).val() === true"
+              },
+              "body": {
+                ".validate": "newData.isString() && newData.val().matches(/^(hoodie|raincoat|overalls|dress)$/) && root.child('users').child($pid).child('owned/acc').child(newData.val()).val() === true"
+              },
+              "feet": {
+                ".validate": "newData.isString() && newData.val().matches(/^(sneakers|boots)$/) && root.child('users').child($pid).child('owned/acc').child(newData.val()).val() === true"
+              },
+              "back": {
+                ".validate": "newData.isString() && newData.val().matches(/^(backpack)$/) && root.child('users').child($pid).child('owned/acc').child(newData.val()).val() === true"
               },
               "$other": {
                 ".validate": false

@@ -543,7 +543,7 @@ code {
 .daily-top li { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--color-border-secondary); }
 .daily-top li:last-child { border-bottom: 1px solid var(--color-border-secondary); }
 .daily-top .md { width: 22px; text-align: center; font-size: 18px; }
-.daily-top .face { width: 28px; height: 28px; flex: none; object-fit: contain; border-radius: 7px; }
+.daily-top .face { width: 28px; height: 28px; flex: none; object-fit: contain; border-radius: 7px; background: linear-gradient(160deg, #e6f4ff, #fff7e6); }
 .daily-top .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
 .daily-top .tm { font-variant-numeric: tabular-nums; font-weight: 600; }
 .daily-top li.me .nm { color: var(--color-primary); }
@@ -563,8 +563,8 @@ code {
 .animal-grid button img { width: 44px; height: auto; display: block; }
 .animal-grid button:hover { border-color: var(--color-primary); color: var(--color-primary); }
 .animal-grid button.active { border-color: var(--color-primary); background: var(--color-primary-bg); color: var(--color-primary); font-weight: 500; box-shadow: 0 0 0 1px var(--color-primary); }
-.avatar-animal { background: transparent; }
-.avatar-animal > img { width: 100%; height: 100%; object-fit: contain; display: block; border-radius: 8px; }
+.avatar-animal { background: linear-gradient(160deg, #e6f4ff, #fff7e6); border-radius: 10px; }
+.avatar-animal > img { width: 100%; height: 100%; object-fit: contain; display: block; border-radius: 10px; }
 .chat-log .who .em-img { width: 18px; height: auto; vertical-align: -3px; margin-right: 4px; border-radius: 4px; }
 /* 대기실 광장 (2D) */
 .plaza {
@@ -585,19 +585,8 @@ code {
 .pz2-ch .fig .inner > img { height: 100%; width: auto; display: block; filter: drop-shadow(0 1px 1px rgba(0,0,0,.12)); }
 /* 액세서리: 위치는 캐릭터 그림 높이 대비 %, 크기는 em (= 캐릭터 키) */
 .charfig .accs { position: absolute; inset: 0; pointer-events: none; }
-.charfig .acc { position: absolute; left: 50%; transform: translate(-50%, 50%); line-height: 1; }
-.charfig .acc > * { display: block; }
-.charfig .acc > span { font-size: .26em; }
-.charfig .acc > img { width: .4em; height: auto; }
-.charfig .acc-head { bottom: 90%; }
-.charfig .acc-eyes { bottom: 54%; }
-.charfig .acc-eyes > span { font-size: .22em; }
-.charfig .acc-neck { bottom: 35%; }
-.charfig .acc-neck > span { font-size: .18em; }
-.charfig[data-view="side"] .acc-head { left: 46%; }
-.charfig[data-view="side"] .acc-eyes { left: 34%; }
-.charfig[data-view="side"] .acc-neck { left: 44%; }
-.charfig[data-view="back"] .acc-eyes { display: none; }
+/* 액세서리 위치·크기는 animals.js의 lookAccHtml이 정함 (em = 캐릭터 키) */
+.charfig .acc { position: absolute; display: block; height: auto; max-width: none; }
 .pz2-ch .shadow {
   position: absolute; left: 0; top: 0; width: 46px; height: 12px; border-radius: 50%;
   background: radial-gradient(rgba(0,0,0,.28), rgba(0,0,0,0) 70%);
@@ -713,9 +702,9 @@ code {
 .picker-tip { margin: 0; }
 /* 상점 */
 .shop-head { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
-.shop-preview { width: 140px; height: 150px; display: grid; place-items: end center; border-radius: 12px;
+.shop-preview { width: 150px; height: 196px; display: grid; place-items: end center; border-radius: 12px;
   background: linear-gradient(#e6f4ff, #f6ffed); flex: none; padding-bottom: 6px; }
-.shop-preview .charfig { height: 130px; font-size: 130px; }
+.shop-preview .charfig { height: 140px; font-size: 140px; }
 .shop-pts { font-size: 28px; font-weight: 600; color: var(--color-primary); }
 .shop-tabs { margin: 0 0 16px; }
 .shop-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 12px; }
@@ -725,7 +714,7 @@ code {
 .shop-item .art { position: relative; height: 96px; display: grid; place-items: center; }
 .shop-item .art img { max-height: 96px; max-width: 100%; }
 .shop-item .art .acc-art { font-size: 56px; line-height: 1; }
-.shop-item .art img.acc-art { width: 72px; height: auto; }
+.shop-item .art img.acc-art { width: 84px; max-height: 84px; object-fit: contain; }
 .shop-item.locked .art > img, .shop-item.locked .art .acc-art { filter: grayscale(.85); opacity: .55; }
 .shop-item .lockmark { position: absolute; right: -8px; top: 0; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
   background: var(--color-bg-elevated, #fff); color: var(--color-text-secondary); box-shadow: 0 1px 4px rgba(0,0,0,.15); }
