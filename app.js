@@ -542,6 +542,7 @@ function publishLobby() {
   const summary = {
     name: host?.name || '',
     e: host ? charOf(host).e : '',
+    a: host ? charOf(host).a : '',
     count: room.players.length,
     state: room.state,
     mode: room.mode,
@@ -625,8 +626,10 @@ function renderLobbies() {
   $('#open-rooms').innerHTML = open.length
     ? open.map(([code, l]) => {
       const full = l.count >= MAX_PLAYERS;
-      const e = esc(safeGlyph(l.e, '🏁'));
-      return `<li><span class="avatar" style="background:var(--color-primary-bg);font-size:18px">${e}</span>`
+      const face = animalOf(l.a)
+        ? `<span class="avatar avatar-animal"><img src="${animalImg(l.a, 'icon')}" alt="${animalOf(l.a).label}"></span>`
+        : `<span class="avatar" style="background:var(--color-primary-bg);font-size:18px">${esc(safeGlyph(l.e, '🏁'))}</span>`;
+      return `<li>${face}`
         + `<div class="info"><span class="title">${esc(l.name || '이름 없음')}님의 방</span>`
         + `<span class="meta">${STATE_TAG[l.state] || ''}<span class="tag">${esc(modeLabel(l.mode))}</span>${l.count}명 · ${code}</span></div>`
         + `<button class="btn btn-primary" data-join="${esc(code)}" ${full ? 'disabled' : ''}>${full ? '가득 참' : '참가하기'}</button></li>`;
@@ -683,7 +686,7 @@ function watchDaily() {
     $('#btn-daily').disabled = true;
   };
   daily.unsub.push(onValue(dailyRef(date, 'puzzle'), (s) => { daily.puzzle = s.val(); renderDaily(); }, fail));
-  daily.unsub.push(onValue(dailyRef(date, 'best'), (s) => { daily.best = s.val() || {}; renderDaily(); }, fail));
+  daily.unsub.push(onValue(dailyRef(date, 'best'), (s) => { daily.best = s.val() || {}; lookCache.clear(); renderDaily(); }, fail));
 }
 function unwatchDaily() {
   daily.unsub.forEach((u) => u());
@@ -694,6 +697,21 @@ function dailyRanking() {
     .filter(([, r]) => typeof r?.ms === 'number')
     .map(([id, r]) => ({ id, ...r }))
     .sort((a, b) => a.ms - b.ms || (a.at || 0) - (b.at || 0));
+}
+// 오늘의 챔피언 옆 캐릭터: 그 사람이 지금 쓰는 동물 (계정에서 읽어 옴, 한 번 읽으면 기억)
+const lookCache = new Map(); // uid → 동물 id | 'loading'
+function championFace(r) {
+  if (r.id === playerId) lookCache.set(r.id, myLook().a);
+  const a = lookCache.get(r.id);
+  if (a === undefined) {
+    lookCache.set(r.id, 'loading');
+    get(ref(db, `users/${r.id}/look/a`))
+      .then((s) => { lookCache.set(r.id, animalOf(s.val())?.id || 'cat'); renderDaily(); })
+      .catch(() => lookCache.set(r.id, 'cat'));
+  }
+  const id = animalOf(a)?.id;
+  if (id) return `<img class="face" src="${animalImg(id, 'icon')}" alt="${animalOf(id).label}">`;
+  return `<span class="face"></span>`;
 }
 function renderDaily() {
   const pz = daily.puzzle;
@@ -706,7 +724,7 @@ function renderDaily() {
   const medal = ['🥇', '🥈', '🥉'];
   $('#daily-top').innerHTML = list.length
     ? list.slice(0, 3).map((r, i) => `<li class="${r.id === playerId ? 'me' : ''}"><span class="md">${medal[i]}</span>`
-      + `<span class="nm">${safeGlyph(r.e) ? esc(r.e) + ' ' : ''}${esc(r.name)}</span><span class="tm">${fmtTimePrecise(r.ms)}</span></li>`).join('')
+      + `${championFace(r)}<span class="nm">${esc(r.name)}</span><span class="tm">${fmtTimePrecise(r.ms)}</span></li>`).join('')
     : '<li class="empty">아직 기록이 없어요. 첫 챔피언이 되어 보세요!</li>';
   const myIdx = list.findIndex((r) => r.id === playerId);
   $('#daily-mine').textContent = myIdx >= 0 ? `내 최고 기록 ${fmtTimePrecise(list[myIdx].ms)} · ${list.length}명 중 ${myIdx + 1}등` : '';

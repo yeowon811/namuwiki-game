@@ -543,6 +543,7 @@ code {
 .daily-top li { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--color-border-secondary); }
 .daily-top li:last-child { border-bottom: 1px solid var(--color-border-secondary); }
 .daily-top .md { width: 22px; text-align: center; font-size: 18px; }
+.daily-top .face { width: 28px; height: 28px; flex: none; object-fit: contain; border-radius: 7px; }
 .daily-top .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
 .daily-top .tm { font-variant-numeric: tabular-nums; font-weight: 600; }
 .daily-top li.me .nm { color: var(--color-primary); }
