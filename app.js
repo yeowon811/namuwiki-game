@@ -77,7 +77,7 @@ function syncExt() {
     mode: room.mode,
     players: ranking(room).map((p) => ({
       id: p.id, name: p.name, status: p.status, me: p.id === playerId,
-      clicks: p.clicks ?? null, elapsed: p.elapsed ?? null, leg: p.leg || 0,
+      clicks: p.clicks ?? null, elapsed: p.elapsed ?? null, leg: p.leg || 0, dq: !!p.dq,
     })),
     total: targetsOf(room).length,
   });
@@ -122,7 +122,7 @@ function onExtState() {
     if (!ext.oldWarned) { ext.oldWarned = true; toast('릴레이 모드는 확장 프로그램을 업데이트해야 기록돼요. (1.3.0 이상)', 'warning'); }
     return;
   }
-  const key = `${raceKey()}/${r.steps.length}/${r.finished}/${r.leg}/${r.hints || 0}`;
+  const key = `${raceKey()}/${r.steps.length}/${r.finished}/${r.leg}/${r.hints || 0}/${r.violations || 0}/${r.away || 0}/${!!r.dq}`;
   if (ext.writtenKey === key) return;
   const prevLeg = me()?.leg || 0;
   ext.writtenKey = key;
@@ -136,7 +136,13 @@ function onExtState() {
     violations: r.violations,
     hints,
     returns: r.returns || 0,
+    away: r.away || 0,
   };
+  // 위반 3회 → 실격 (포기와 같이 처리하되 실격으로 표시)
+  if (r.dq && !r.finished) {
+    data.status = 'gaveup';
+    data.dq = true;
+  }
   if (relay) {
     data.leg = r.leg;
     data.legTimes = r.legT.map((t) => Math.max(0, t + clockOffset - room.startAt));
@@ -149,6 +155,7 @@ function onExtState() {
   }
   update(roomRef(room.code, 'players', playerId), data).catch((e) => console.error(e));
   if (r.finished) toast('도착! 기록이 저장됐어요.', 'success');
+  else if (data.dq) toast('규칙 위반 2회로 실격됐어요.', 'error');
 }
 
 // 힌트 페널티: 최소 클릭은 +3클릭, 타임어택·릴레이·오늘의 챔피언은 +30초
@@ -168,7 +175,8 @@ function renderProgress() {
   }
   el.innerHTML = `<b>${r.clicks}클릭</b> · 지금 문서 <b>${esc(last.title)}</b>`
     + (r.hints ? `<br>💡 힌트 ${r.hints}회 (${hintPenaltyText(room.mode, r.hints)})` : '')
-    + (r.violations ? `<br><span class="warn">링크 클릭이 아닌 이동 ${r.violations}회</span>` : '');
+    + (r.violations ? `<br><span class="warn">규칙 위반 ${r.violations}/${r.maxStrikes || 2}회 (${r.maxStrikes || 2}회면 실격)</span>` : '')
+    + (r.away ? `<br><span class="warn">다른 탭을 본 횟수 ${r.away}회</span>` : '');
 }
 
 const params = new URLSearchParams(location.search);
@@ -484,6 +492,8 @@ function startRound() {
     updates[`players/${p.id}/auto`] = null;
     updates[`players/${p.id}/leg`] = null;
     updates[`players/${p.id}/hints`] = null;
+    updates[`players/${p.id}/dq`] = null;
+    updates[`players/${p.id}/away`] = null;
     updates[`players/${p.id}/returns`] = null;
     updates[`players/${p.id}/legTimes`] = null;
   }
@@ -1192,7 +1202,7 @@ function render() {
       const wait = room.mode !== 'clicks' && (room.winners || 1) > 1 ? `${room.winners}등까지 나오면 게임이 끝나요.` : '다른 사람들이 끝나길 기다리는 중…';
       done.innerHTML = `<div class="card done-box ok">${icon('check')}<div><p class="done-title">${rank ? `${rank}등으로 도착!` : '도착 완료!'} ${fmtTimePrecise(my.elapsed)} · ${my.clicks}클릭</p><p class="text-tertiary">${wait}</p></div></div>`;
     } else if (status === 'gaveup') {
-      done.innerHTML = `<div class="card done-box out">${icon('close')}<div><p class="done-title">포기했어요</p><p class="text-tertiary">다른 사람들이 끝나길 기다리는 중…</p></div></div>`;
+      done.innerHTML = `<div class="card done-box out">${icon('close')}<div><p class="done-title">${my.dq ? `실격됐어요 (규칙 위반 ${my.violations || 2}회)` : '포기했어요'}</p><p class="text-tertiary">다른 사람들이 끝나길 기다리는 중…</p></div></div>`;
     }
     const ranked = ranking(room);
     const spectators = room.players.filter((p) => !ranked.includes(p));
@@ -1201,7 +1211,7 @@ function render() {
       const legStr = relay ? ` · ${p.leg || 0}/${targets.length}단계` : '';
       let tag = `<span class="tag tag-processing">달리는 중${legStr}${p.auto && p.clicks != null ? ` · ${p.clicks}클릭째` : ''}</span>`;
       if (p.status === 'finished') tag = `<span class="tag tag-success">${room.mode === 'clicks' ? p.clicks + '클릭 · ' : ''}${fmtTimePrecise(p.elapsed)}</span>`;
-      else if (p.status === 'gaveup') tag = '<span class="tag tag-error">포기</span>';
+      else if (p.status === 'gaveup') tag = `<span class="tag tag-error">${p.dq ? '실격' : '포기'}</span>`;
       else if (p.status === 'waiting') tag = '<span class="tag">관전</span>';
       if (relay && p.status !== 'waiting') tag = legDots(p, targets.length) + tag;
       return playerRow(p, tag);
@@ -1249,7 +1259,7 @@ function renderResults(host) {
     if (finished) rank += 1;
     const rankStr = `<span class="rank-badge ${finished && rank <= 3 ? 'r' + rank : ''}">${finished ? rank : '-'}</span>`;
     let score;
-    if (!finished) score = `<span class="muted">${p.status === 'gaveup' ? '포기' : '미도착'}${relay ? `<small>${legDots(p, targets.length)} ${p.leg || 0}/${targets.length}단계</small>` : ''}</span>`;
+    if (!finished) score = `<span class="muted">${p.dq ? '실격' : p.status === 'gaveup' ? '포기' : '미도착'}${relay ? `<small>${legDots(p, targets.length)} ${p.leg || 0}/${targets.length}단계</small>` : ''}</span>`;
     else if (room.mode === 'clicks') score = `${p.clicks}클릭<small>${fmtTimePrecise(p.elapsed)}</small>`;
     else score = `${fmtTimePrecise(p.elapsed)}<small>${p.clicks}클릭</small>`;
     // 자동 기록이면 각 이동이 링크 클릭이었는지 표시, 수동 기록이면 적은 경로만 표시
@@ -1269,7 +1279,9 @@ function renderResults(host) {
     if (finished && p.auto === false) flags.push('<span class="tag tag-warning">수동 기록</span>');
     if (p.hints) flags.push(`<span class="tag tag-warning">💡 힌트 ${p.hints}회 (${hintPenaltyText(room.mode, p.hints)})</span>`);
     if (p.returns) flags.push(`<span class="tag">↩ 되돌아가기 ${p.returns}회</span>`);
-    if (p.violations) flags.push(`<span class="tag tag-error">규칙 위반 의심 ${p.violations}회</span>`);
+    if (p.dq) flags.push(`<span class="tag tag-error">🚫 실격 (규칙 위반 ${p.violations || 2}회)</span>`);
+    else if (p.violations) flags.push(`<span class="tag tag-error">규칙 위반 ${p.violations}회</span>`);
+    if (p.away) flags.push(`<span class="tag tag-warning">👀 다른 탭 ${p.away}회</span>`);
     const mine = p.id === playerId ? ' <span class="tag tag-blue">나</span>' : '';
     return `<li class="${finished && rank === 1 ? 'first' : ''}"><div class="head">${rankStr}<span class="name">${esc(p.name)}${mine}</span><span class="score">${score}</span></div>${path}${flags.length ? `<div class="flags">${flags.join('')}</div>` : ''}</li>`;
   });

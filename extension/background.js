@@ -1,4 +1,4 @@
-import { newRace, applyNav, summary, pageFromUrl, requestReturn, useHint } from './tracker.js';
+import { newRace, applyNav, summary, pageFromUrl, requestReturn, useHint, strikeFind, AWAY_MS } from './tracker.js';
 
 const namuUrl = (t) => 'https://namu.wiki/w/' + encodeURIComponent(t);
 
@@ -130,7 +130,7 @@ async function handle(msg, sender) {
     }
     case 'HINT': {
       // 힌트: 지금 목표의 위키백과 요약. 목표마다 처음 볼 때만 페널티
-      if (!race || tabId !== race.tabId || race.finished) return { race: summary(race) };
+      if (!race || tabId !== race.tabId || race.finished || race.dq) return { race: summary(race) };
       const h = useHint(race);
       race.hintText = race.hintText || {};
       if (!race.hintText[h.idx]) {
@@ -150,6 +150,19 @@ async function handle(msg, sender) {
     case 'NAV': {
       if (!race || tabId !== race.tabId) return { race: null };
       if (applyNav(race, msg.nav)) {
+        // 위반 이동이면 원래 문서로 되돌림
+        const restore = race.pendingRestore;
+        race.pendingRestore = null;
+        await save(race);
+        if (restore && !race.dq) chrome.tabs.update(race.tabId, { url: namuUrl(restore) }).catch(() => {});
+        notifyGame(race);
+      }
+      return { race: summary(race) };
+    }
+    case 'STRIKE': {
+      // 레이스 탭에서 Ctrl+F 등 금지 행동 시도
+      if (!race || tabId !== race.tabId) return { race: null };
+      if (msg.kind === 'find' && strikeFind(race, msg.title, Date.now())) {
         await save(race);
         notifyGame(race);
       }
@@ -162,6 +175,37 @@ async function handle(msg, sender) {
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   serial(() => handle(msg, sender)).then(sendResponse, (e) => sendResponse({ error: String(e) }));
   return true; // 비동기 응답
+});
+
+// 레이스 중 다른 탭·창을 보는지 감시 (경고만, 3초 넘게 보면 1회)
+function onActiveChange(activeTabId) {
+  serial(async () => {
+    const race = await load();
+    if (!race || race.finished || race.dq || race.tabId == null) return;
+    const allowed = activeTabId != null && (activeTabId === race.tabId || activeTabId === race.gameTabId);
+    if (!allowed) {
+      if (!race.awaySince) { race.awaySince = Date.now(); await save(race); }
+      return;
+    }
+    if (race.awaySince) {
+      const long = Date.now() - race.awaySince > AWAY_MS;
+      race.awaySince = null;
+      if (long) race.away = (race.away || 0) + 1;
+      await save(race);
+      if (long) {
+        notifyGame(race);
+        notifyRaceTab(race, race.tabId, { awayWarn: true });
+      }
+    }
+  });
+}
+chrome.tabs.onActivated.addListener(({ tabId }) => onActiveChange(tabId));
+chrome.windows.onFocusChanged.addListener(async (windowId) => {
+  if (windowId === chrome.windows.WINDOW_ID_NONE) return onActiveChange(null); // 크롬 밖의 다른 프로그램
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, windowId });
+    onActiveChange(tab?.id ?? null);
+  } catch { /* 무시 */ }
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {

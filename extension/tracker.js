@@ -24,6 +24,8 @@ export function matches(page, keyword) {
 
 export const CLICK_WINDOW_MS = 8000; // 링크 클릭 후 이 시간 안에 문서가 바뀌면 '링크로 이동'으로 인정
 export const BACK_WINDOW_MS = 3000;
+export const MAX_STRIKES = 2; // 위반이 이만큼 쌓이면 실격
+export const AWAY_MS = 3000; // 다른 탭·창을 이 시간 넘게 보면 경고
 export const RETURN_WINDOW_MS = 20000; // '이전 문서로' 버튼을 누른 뒤 이 시간 안에 그 문서가 열리면 되돌아가기로 인정
 
 export function newRace(info) {
@@ -46,6 +48,12 @@ export function newRace(info) {
     returnTo: null, // '이전 문서로'를 눌러 돌아가는 중인 문서 { title, t }
     hints: [], // 힌트를 본 목표 번호 (릴레이는 목표마다 따로)
     hintText: {}, // 목표 번호 → 힌트 내용
+    strikes: [], // 위반 { kind: 'back' | 'other' | 'find', title, t }
+    findDocs: [], // Ctrl+F를 시도한 문서 (문서마다 1회만 셈)
+    pendingRestore: null, // 위반 이동을 되돌릴 문서
+    dq: false, // 실격
+    away: 0, // 다른 탭·창을 본 횟수 (경고만)
+    awaySince: null,
     offDoc: false,
     finished: false,
     finishT: null,
@@ -57,8 +65,26 @@ export function newRace(info) {
  * nav: { url, t, clickT, popT }  (clickT: 마지막 링크 클릭 시각, popT: 마지막 뒤로/앞으로 가기 시각)
  * 반환: 기록이 바뀌었으면 true
  */
+// 위반 1회 추가. 3회면 실격
+export function addStrike(race, kind, title, t) {
+  race.strikes = race.strikes || [];
+  race.strikes.push({ kind, title, t });
+  if (race.strikes.length >= MAX_STRIKES) { race.dq = true; race.dqT = t; }
+}
+
+// Ctrl+F 시도: 같은 문서에서는 1회만 셈
+export function strikeFind(race, title, t) {
+  if (race.finished || race.dq) return false;
+  race.findDocs = race.findDocs || [];
+  const key = norm(title || '');
+  if (race.findDocs.includes(key)) return false;
+  race.findDocs.push(key);
+  addStrike(race, 'find', title, t);
+  return true;
+}
+
 export function applyNav(race, nav) {
-  if (race.finished) return false;
+  if (race.finished || race.dq) return false;
   if (nav.t < race.startAt) return false;
   const page = pageFromUrl(nav.url);
   if (!page) {
@@ -81,6 +107,14 @@ export function applyNav(race, nav) {
   else if (nav.popT && nav.t - nav.popT >= 0 && nav.t - nav.popT < BACK_WINDOW_MS) h = 'back';
   else if (nav.clickT && nav.t - nav.clickT >= 0 && nav.t - nav.clickT < CLICK_WINDOW_MS) h = 'link';
   else h = 'other';
+
+  // 위반 이동(뒤로가기, 주소창 입력 등): 기록에 남기지 않고 원래 문서로 되돌림
+  if (h === 'back' || h === 'other') {
+    race.offDoc = false;
+    addStrike(race, h, page.title, nav.t);
+    race.pendingRestore = last ? last.title : race.start;
+    return true;
+  }
 
   const step = { title: page.title, h, t: nav.t };
   race.steps.push(step);
@@ -105,7 +139,7 @@ export function applyNav(race, nav) {
 // '이전 문서로' 버튼: 돌아갈 문서 제목 (돌아갈 곳이 없으면 null)
 export function requestReturn(race, t) {
   const trail = race.trail || [];
-  if (race.finished || trail.length < 2) return null;
+  if (race.finished || race.dq || trail.length < 2) return null;
   const title = trail[trail.length - 2];
   race.returnTo = { title, t };
   return title;
@@ -139,9 +173,13 @@ export function summary(race) {
     startAt: race.startAt,
     steps: race.steps.map(({ title, h, cp }) => (cp ? { title, h, cp } : { title, h })),
     clicks: Math.max(0, race.steps.length - 1),
-    violations: race.steps.filter((s) => s.h === 'back' || s.h === 'other').length,
+    violations: (race.strikes || []).length,
+    strikes: (race.strikes || []).map(({ kind, title }) => ({ kind, title })),
+    maxStrikes: MAX_STRIKES,
+    dq: !!race.dq,
+    away: race.away || 0,
     returns: race.steps.filter((s) => s.h === 'return').length,
-    canReturn: !race.finished && (race.trail || []).length >= 2,
+    canReturn: !race.finished && !race.dq && (race.trail || []).length >= 2,
     returnTitle: (race.trail || []).length >= 2 ? race.trail[race.trail.length - 2] : null,
     hints: (race.hints || []).length,
     hintText: race.hintText?.[Math.min(race.leg || 0, (race.targets || [race.target]).length - 1)] || null,

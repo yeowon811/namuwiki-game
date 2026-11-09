@@ -11,7 +11,7 @@
   let lastDocUrl = null;
   let race = null;
 
-  const blocking = () => !!race && !race.finished;
+  const blocking = () => !!race && !race.finished && !race.dq;
   const SEARCH_INPUT = 'input[type="search"]';
   const BLOCKED_PATH = /^\/(Search|go\/|random|RandomPage)/i;
 
@@ -38,6 +38,23 @@
       }
     }, true);
   }
+  // 페이지 내 찾기(Ctrl+F, ⌘F, F3, Ctrl+G) 막기 → 위반 1회 (문서마다 1회)
+  window.addEventListener('keydown', async (e) => {
+    if (!blocking()) return;
+    const k = (e.key || '').toLowerCase();
+    const find = ((e.ctrlKey || e.metaKey) && (k === 'f' || k === 'g')) || e.key === 'F3';
+    if (!find) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    const before = race.violations;
+    const res = await send({ type: 'STRIKE', kind: 'find', title: currentTitle() });
+    if (res?.race) setRace(res.race);
+    if (!res?.race || res.race.violations === before) toast('레이스 중에는 찾기(Ctrl+F)를 쓸 수 없어요.', 3000, 'warning');
+  }, true);
+  const currentTitle = () => {
+    try { return decodeURIComponent(location.pathname.slice(3)); } catch { return location.pathname.slice(3); }
+  };
+
   document.addEventListener('submit', (e) => {
     if (blocking() && isSearchEl(e.target)) {
       e.preventDefault();
@@ -148,6 +165,7 @@
         .k svg{color:var(--primary)}
         .target{font-weight:600;font-size:16px;line-height:1.4;color:var(--primary);word-break:keep-all;margin:2px 0 8px}
         .box.done .target{color:var(--success-text)}
+        .box.dq .target{color:var(--error)}
         .row{display:flex;justify-content:space-between;gap:12px}
         .stat{display:flex;align-items:center;gap:6px;font-weight:600;font-variant-numeric:tabular-nums}
         .stat svg{color:var(--text3)}
@@ -314,7 +332,7 @@
         s = board.mode === 'clicks' ? `${p.clicks}클릭 · ${fmtP(p.elapsed)}` : `${fmtP(p.elapsed)} · ${p.clicks}클릭`;
       } else if (p.status === 'gaveup') {
         cls += ' out';
-        s = '포기';
+        s = p.dq ? '실격' : '포기';
       } else {
         const leg = board.mode === 'relay' ? ` · ${p.leg || 0}/${board.total}` : '';
         s = p.clicks != null ? `달리는 중${leg} · ${p.clicks}클릭째` : `달리는 중${leg}`;
@@ -365,6 +383,19 @@
     }
   }
 
+  // 위반하면 곧바로 원래 문서로 새로고침되므로, 알림을 저장해 뒀다가 새 페이지에서 다시 보여줌
+  function stickyToast(msg, ms, kind) {
+    toast(msg, ms, kind);
+    try { sessionStorage.setItem('nr-sticky-toast', JSON.stringify({ msg, ms, kind, at: Date.now() })); } catch {}
+  }
+  function replayStickyToast() {
+    try {
+      const v = JSON.parse(sessionStorage.getItem('nr-sticky-toast') || 'null');
+      sessionStorage.removeItem('nr-sticky-toast');
+      if (v && Date.now() - v.at < 8000) toast(v.msg, v.ms, v.kind);
+    } catch {}
+  }
+
   function showHint(target, text) {
     if (!root) return;
     const el = root.querySelector('.hint');
@@ -375,6 +406,8 @@
   function setRace(r) {
     const prevKey = race && `${race.code}/${race.round}`;
     const prevLeg = race?.leg || 0;
+    const prevStrikes = race?.violations || 0;
+    const prevDq = !!race?.dq;
     race = r;
     updateBlockStyle();
     if (!race) return removeHud();
@@ -387,8 +420,9 @@
     const leg = race.leg || 0;
     const current = race.current || race.target;
     root.querySelector('.box').classList.toggle('done', race.finished);
+    root.querySelector('.box').classList.toggle('dq', !!race.dq);
     root.querySelector('.klabel').textContent = total > 1 ? `목표 ${Math.min(leg + 1, total)}/${total}` : '목표 문서';
-    root.querySelector('.target').textContent = race.finished ? `도착! ${current}` : current;
+    root.querySelector('.target').textContent = race.dq ? `실격 (규칙 위반 ${race.violations}회)` : race.finished ? `도착! ${current}` : current;
     // 릴레이: 중간 목표에 도착하면 다음 목표 공개
     if (sameRace && total > 1 && leg > prevLeg && !race.finished) {
       toast(`${leg}번째 목표 도착! 다음 목표: ${current}`, 5000, 'success');
@@ -398,7 +432,17 @@
     const ret = root.querySelector('.ret');
     ret.disabled = !race.canReturn;
     ret.title = race.canReturn ? `'${race.returnTitle}'(으)로 돌아가요. 규칙 위반이 아니고 클릭 1번으로만 세요.` : '돌아갈 문서가 없어요.';
-    root.querySelector('.hintb').disabled = !!race.finished;
+    root.querySelector('.hintb').disabled = !!race.finished || !!race.dq;
+    // 위반 알림
+    if (sameRace && race.violations > prevStrikes) {
+      const last = race.strikes?.[race.strikes.length - 1];
+      const what = { back: '뒤로가기는', other: '링크가 아닌 이동(주소창 등)은', find: '찾기(Ctrl+F)는' }[last?.kind] || '규칙 위반은';
+      const whatName = { back: '뒤로가기', other: '링크가 아닌 이동', find: '찾기(Ctrl+F)' }[last?.kind] || '규칙 위반';
+      const fix = last?.kind === 'find' ? '' : ' 원래 문서로 되돌렸어요.';
+      if (race.dq) stickyToast(`🚫 실격! 규칙 위반이 ${race.violations}회예요. (마지막: ${whatName})`, 8000, 'warning');
+      else if (race.violations >= (race.maxStrikes || 2) - 1) stickyToast(`⚠️ ${what} 금지예요!${fix} 한 번 더 위반하면 실격이에요. (${race.violations}/${race.maxStrikes || 2})`, 6000, 'warning');
+      else stickyToast(`⚠️ ${what} 금지예요!${fix} (위반 ${race.violations}/${race.maxStrikes || 2})`, 5000, 'warning');
+    } else if (sameRace && race.dq && !prevDq) toast('🚫 실격됐어요.', 6000, 'warning');
     const hintEl = root.querySelector('.hint');
     if (race.hintText && !race.finished) showHint(race.current || race.target, race.hintText);
     else if (!sameRace || race.finished || (total > 1 && leg > prevLeg)) hintEl.hidden = true; // 다음 목표로 넘어가면 힌트 숨김
@@ -406,8 +450,8 @@
     pen.hidden = !race.hints;
     pen.textContent = `💡 힌트 ${race.hints}회 · 페널티 ${race.mode === 'clicks' ? `+${race.hints * 3}클릭` : `+${race.hints * 30}초`}`;
     const warn = root.querySelector('.warn');
-    warn.hidden = !race.violations;
-    warn.textContent = `링크 클릭이 아닌 이동 ${race.violations}회`;
+    warn.hidden = !race.violations && !race.away;
+    warn.textContent = [race.violations ? `규칙 위반 ${race.violations}/${race.maxStrikes || 2}회` : '', race.away ? `다른 탭 ${race.away}회` : ''].filter(Boolean).join(' · ');
     updateTime();
     renderBoard();
     notifyArrivals();
@@ -415,6 +459,7 @@
 
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.type !== 'HUD') return;
+    if (msg.awayWarn && msg.race) setTimeout(() => toast(`👀 레이스 중에 다른 탭을 봤어요. 결과에 표시돼요. (${msg.race.away}회)`, 5000, 'warning'), 300);
     if (!msg.race && msg.ended && race) {
       const board = msg.board || race.board;
       race = null;
@@ -428,6 +473,7 @@
   // 시작: 이 탭이 레이스 탭인지 확인
   send({ type: 'NAMU_HELLO' }).then((res) => {
     if (res?.race) setRace(res.race);
+    if (res?.race) replayStickyToast();
     check();
     setInterval(check, 250);
   });
