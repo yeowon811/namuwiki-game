@@ -760,3 +760,6 @@ code {
 .ready-auto input { width: 16px; height: 16px; accent-color: var(--color-primary); }
 body.has-ready-bar { padding-bottom: 96px; }
 @media (max-width: 480px) { .ready-actions { width: 100%; } .ready-btn, .ready-start { flex: 1; } body.has-ready-bar { padding-bottom: 140px; } }
+
+/* 확장 프로그램이 없을 때 준비 막대 안내 */
+.ready-bar.no-ext .ready-wait { color: var(--color-warning); font-weight: 600; }

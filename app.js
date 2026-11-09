@@ -72,6 +72,8 @@ window.addEventListener('message', (e) => {
 // 확장 프로그램의 내용 스크립트가 늦게 준비될 수 있으니 응답이 올 때까지 몇 번 물어봄
 [0, 300, 1000, 2500, 5000].forEach((ms) => setTimeout(() => { if (!ext.ready) toExt('PING'); }, ms));
 
+// 자동 기록 확장 프로그램이 있어야 준비·시작·오늘의 챔피언 도전을 할 수 있음
+const NEED_EXT_MSG = '자동 기록 확장 프로그램을 설치해야 게임에 참가할 수 있어요. 시작 화면의 \'자동 기록 확장 프로그램 설치\'를 참고해 주세요.';
 const raceKey = () => (room ? `${room.code}/${room.round}` : null);
 const extRaceIsCurrent = () => ext.race && room && ext.race.code === room.code && ext.race.round === room.round && ext.race.playerId === playerId;
 
@@ -508,6 +510,7 @@ function leaveLocal() {
 // ---------- 방장 동작 ----------
 function startRound() {
   if (!isHost()) return;
+  if (!ext.ready) { toast(NEED_EXT_MSG, 'warning'); return; }
   if (!room.daily && !allReady()) { toast(`아직 준비하지 않은 사람이 있어요: ${notReady().map((p) => p.name).join(', ')}`, 'warning'); return; }
   const relay = room.mode === 'relay';
   const picked = room.daily?.start ? { ...room.daily, target: room.daily.targets[room.daily.targets.length - 1] }
@@ -874,6 +877,7 @@ function submitDailyIfDone() {
 }
 
 $('#btn-daily').onclick = (e) => {
+  if (!ext.ready) { toast(NEED_EXT_MSG, 'warning'); return; }
   const name = getName();
   if (name) guarded(e.currentTarget, () => startDaily(name));
 };
@@ -940,6 +944,7 @@ const allReady = () => notReady().length === 0;
 let readySending = false;
 function setReady(on) {
   if (!room || !me() || isHost() || readySending) return;
+  if (on && !ext.ready) { toast(NEED_EXT_MSG, 'warning'); return; }
   readySending = true;
   update(roomRef(room.code, 'players', playerId), { ready: on ? true : null })
     .catch((e) => console.warn('[준비]', e.message))
@@ -951,7 +956,7 @@ function renderReady() {
   const host = isHost();
   const my = me();
   // 자동 준비: 대기실·결과 화면에서 준비가 안 되어 있으면 바로 준비
-  if (!host && my && !my.ready && autoReady()) setReady(true);
+  if (!host && my && !my.ready && autoReady() && ext.ready) setReady(true);
   const need = mustReady();
   const waiting = notReady();
   const done = need.length - waiting.length;
@@ -959,15 +964,17 @@ function renderReady() {
   const bar = $('#ready-bar');
   showReadyBar(true);
   bar.querySelector('.ready-count').textContent = need.length ? `준비 ${done} / ${need.length}명` : '함께할 사람을 기다리는 중';
-  bar.querySelector('.ready-wait').textContent = waiting.length ? `아직: ${waiting.map((p) => p.name).join(', ')}` : need.length ? '모두 준비 완료!' : '';
+  bar.querySelector('.ready-wait').textContent = !ext.ready ? '자동 기록 확장 프로그램이 있어야 참가할 수 있어요.'
+    : waiting.length ? `아직: ${waiting.map((p) => p.name).join(', ')}` : need.length ? '모두 준비 완료!' : '';
+  bar.classList.toggle('no-ext', !ext.ready);
   bar.classList.toggle('all', need.length > 0 && ok);
   // 참가자: 준비 버튼 + 자동 준비
   const btn = bar.querySelector('.ready-btn');
   const on = !!my?.ready;
   btn.classList.toggle('hidden', host);
   bar.querySelector('.ready-auto').classList.toggle('hidden', host);
-  btn.textContent = on ? '✓ 준비 완료' : '준비하기';
-  btn.title = on ? '한 번 더 누르면 준비를 취소해요' : '';
+  btn.textContent = on ? '✓ 준비 완료' : ext.ready ? '준비하기' : '확장 프로그램 필요';
+  btn.title = on ? '한 번 더 누르면 준비를 취소해요' : ext.ready ? '' : NEED_EXT_MSG;
   btn.classList.toggle('btn-primary', !on);
   btn.classList.toggle('btn-success', on);
   bar.querySelector('.ready-auto-input').checked = autoReady();
@@ -975,14 +982,14 @@ function renderReady() {
   const start = bar.querySelector('.ready-start');
   start.classList.toggle('hidden', !host);
   start.innerHTML = ph === 'lobby' ? `${icon('play')}게임 시작` : `${icon('redo')}${room.daily ? '다시 도전' : '다음 판'}`;
-  start.disabled = !ok && !room.daily;
-  start.title = start.disabled ? '모두 준비해야 시작할 수 있어요.' : '';
+  start.disabled = !ext.ready || (!ok && !room.daily);
+  start.title = !ext.ready ? NEED_EXT_MSG : start.disabled ? '모두 준비해야 시작할 수 있어요.' : '';
   // 방장: 모두 준비해야 시작 가능
   for (const id of ['#btn-start', '#btn-again']) {
     const b = $(id);
     if (!b) continue;
-    b.disabled = host && !ok && !room.daily;
-    b.title = b.disabled ? '모두 준비해야 시작할 수 있어요.' : '';
+    b.disabled = host && (!ext.ready || (!ok && !room.daily));
+    b.title = !b.disabled ? '' : !ext.ready ? NEED_EXT_MSG : '모두 준비해야 시작할 수 있어요.';
   }
 }
 function showReadyBar(on) {
@@ -1808,7 +1815,7 @@ $('#nick-form').addEventListener('submit', async (e) => {
 
 // ---------- 승리 포인트: 참가 인원에 따라 ----------
 // 2명: 1등 30 / 3명: 1등 50, 2등 30 / 4명 이상: 1등 100, 2등 50, 3등 30
-const PRIZE = [100, 50, 30]; // 오늘의 챔피언 1·2·3등
+const PRIZE = [200, 150, 100]; // 오늘의 챔피언 1·2·3등
 const prizesFor = (n) => (n >= 4 ? [100, 50, 30] : n === 3 ? [50, 30] : n === 2 ? [30] : []);
 let claimedKey = null;
 async function claimRoundRewards() {
