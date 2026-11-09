@@ -3,7 +3,7 @@
 // - 걷는 방향에 따라 앞·옆·뒷모습으로 바뀜, 뒤쪽(위)으로 갈수록 작게 보임
 // - 방향키 / WASD / 바닥 클릭 / 화면 방향 버튼으로 이동, Shift 달리기, Space 점프
 // 위치(x, y)는 배경 그림 기준 0~1 (y = 발 위치)
-import { animalImg, accOf, accHtml, SLOTS } from './animals.js';
+import { animalImg, accOf, accHtml, SLOTS } from './animals.js?v=3';
 
 // 걸을 수 있는 바닥 (배경 그림의 타일 광장, 타원)
 const FLOOR = { cx: 0.5, cy: 0.635, rx: 0.38, ry: 0.245 };
