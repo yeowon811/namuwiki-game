@@ -1835,7 +1835,8 @@ async function claimRoundRewards() {
     if (!prof) return;
     const updates = {};
     const lastGame = prof.lastGame;
-    if (!(lastGame && lastGame.code === code && lastGame.round === round)) {
+    // 게임 수는 목표까지 도착(완주)한 판만 셈 (포기·실격·미도착·중간에 나간 판은 안 셈)
+    if (my.status === 'finished' && !(lastGame && lastGame.code === code && lastGame.round === round)) {
       updates[`users/${authUser.uid}/lastGame`] = { code, round };
       updates[`users/${authUser.uid}/stats/games`] = (prof.stats?.games || 0) + 1;
     }
@@ -1959,7 +1960,7 @@ function recordQuestRound() {
   const my = me();
   if (!my || !my.status || my.status === 'waiting') return;
   questRoundKey = key;
-  if (my.status === 'gaveup') return; // 포기·실격한 판은 세지 않음
+  if (my.status !== 'finished') return; // 완주한 판만 셈 (포기·실격·미도착은 세지 않음)
   const participants = room.players.filter((p) => p.status && p.status !== 'waiting').length;
   const finished = ranking(room).filter((p) => p.status === 'finished');
   const won = finished[0]?.id === playerId && participants >= QUEST_WIN_MIN;
