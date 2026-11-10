@@ -17,7 +17,7 @@ export const ANIMALS = [
   { id: 'bear', label: '곰', emoji: '🐻' },
   { id: 'fox', label: '여우', emoji: '🦊' },
   { id: 'sheep', label: '양', emoji: '🐑' },
-  { id: 'hamster', label: '햄스터', emoji: '🐹', runOnly: true }, // 옆으로 움직일 땐 달리는 그림(2번)만
+  { id: 'hamster', label: '햄스터', emoji: '🐹' },
 ];
 
 // 액세서리 부위: 부위마다 하나씩 착용
@@ -61,7 +61,7 @@ export const animalOf = (id) => BY_ID.get(id) || null;
 // 옆으로 움직일 때 쓰는 그림 번호: 보통은 1·2번을 번갈아, runOnly면 2번만
 export const walkFrames = (id) => (BY_ID.get(id)?.runOnly ? [1] : [0, 1]);
 export const accOf = (id) => ACC_BY_ID.get(id) || null;
-export const ANIMAL_VER = 3; // 그림을 바꾸면 올려서 캐시를 새로 받게 함
+export const ANIMAL_VER = 4; // 그림을 바꾸면 올려서 캐시를 새로 받게 함
 export const animalImg = (id, view = 'front') => `img/animals/${id}-${view}.webp?v=${ANIMAL_VER}`;
 export const accImg = (id) => `img/acc/${id}.webp?v=${ANIMAL_VER}`;
 export const VIEWS = ['front', 'back', 'left1', 'left2', 'right1', 'right2'];
@@ -90,7 +90,7 @@ export const accHtml = (it, cls = '') => `<img class="${cls}" src="${accImg(it.i
 //   feet: 발바닥 가운데 · pack: 가방 가운데
 // F = 앞모습(뒷모습은 좌우 반전해서 씀), S = 왼쪽을 보는 옆모습(오른쪽은 좌우 반전)
 // fw / sw = 앞모습 / 옆모습 그림 폭(px)
-// S2 / sw2: 옆모습 두 번째 장이 첫 장과 많이 다를 때만 (햄스터: 달리는 자세)
+// S2 / sw2: 옆모습 두 번째 장이 첫 장과 많이 다를 때만 (지금은 쓰는 동물 없음)
 const ANCHORS = {
   cat: { fw: 286, sw: 262,
     F: { head: [146, 46, 200], eyes: [148, 160, 175], neck: [146, 224, 150], body: [146, 214, 150], feet: [143, 357, 165], pack: [146, 270, 150] },
@@ -122,10 +122,9 @@ const ANCHORS = {
   sheep: { fw: 343, sw: 280,
     F: { head: [171, 24, 200], eyes: [170, 154, 160], neck: [171, 226, 165], body: [171, 220, 170], feet: [171, 357, 170], pack: [171, 290, 160] },
     S: { head: [140, 26, 200], eyes: [32, 154, 105], neck: [84, 232, 115], body: [116, 224, 140], feet: [110, 354, 150], pack: [200, 282, 150] } },
-  hamster: { fw: 299, sw: 266, sw2: 267,
+  hamster: { fw: 299, sw: 300,
     F: { head: [149, 30, 190], eyes: [147, 122, 150], neck: [148, 178, 145], body: [148, 172, 172], feet: [148, 357, 180], pack: [148, 232, 165] },
-    S: { head: [140, 32, 180], eyes: [40, 130, 105], neck: [80, 182, 105], body: [122, 178, 138], feet: [112, 352, 145], pack: [210, 232, 140] },
-    S2: { head: [112, 174, 150], eyes: [42, 194, 95], neck: [70, 250, 85], body: [138, 236, 112], feet: [132, 352, 130], pack: [206, 228, 120] } },
+    S: { head: [155, 38, 180], eyes: [51, 137, 105], neck: [95, 200, 110], body: [140, 195, 150], feet: [165, 352, 170], pack: [238, 225, 140] } },
 };
 const H = 360;
 // 부위별: 기준점에 액세서리 그림의 어느 점을 맞출지 (그림 크기 대비 %), 옆모습에서 가로로 줄이는 정도
@@ -161,7 +160,7 @@ const FRAMES = {
   bear: { w: [255, 267, 246, 244, 234, 249], hc: [126, 132], ef: [78, 175, 134], es: [[50, 143], [40, 135], [190, 134], [201, 137]] },
   fox: { w: [298, 270, 310, 335, 315, 337], hc: [132, 134], ef: [84, 184, 155], es: [[46, 156], [42, 154], [270, 146], [296, 143]] },
   sheep: { w: [343, 318, 280, 261, 266, 277], hc: [171, 158], ef: [125, 216, 156], es: [[30, 143], [31, 151], [231, 138], [240, 154]] },
-  hamster: { w: [299, 294, 266, 267, 264, 249], hc: [149, 146], ef: [103, 196, 124], es: [[31, 137], [43, 209], [234, 137], [207, 211]] },
+  hamster: { w: [299, 294, 300, 299, 283, 286], hc: [149, 146], ef: [103, 196, 124], es: [[51, 137], [51, 138], [246, 128], [249, 128]] },
 };
 const VIEW_IDX = { front: 0, back: 1, left1: 2, left2: 3, right1: 4, right2: 5 };
 const LENS = 0.445; // 안경 그림에서 두 렌즈 가운데 사이 거리 (그림 폭 대비)
