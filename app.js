@@ -12,6 +12,7 @@ import {
   animalOf, accOf, animalImg, accHtml, cleanLook, ownsAnimal, ownsAcc, lookAccHtml,
 } from './animals.js?v=9';
 import { createPlaza } from './plaza2d.js?v=9';
+import { THEMES, THEME_PRICE, DEFAULT_THEME, themeOf, themeImg, ownsTheme, myThemeId } from './themes.js?v=1';
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
@@ -1219,6 +1220,7 @@ function renderPlaza() {
     });
   }
   plaza.resume();
+  applyTheme();
   plaza.update(room.players.map((p) => ({
     id: p.id, name: p.name, ...charOf(p), ...posOf(p), run: !!p.pos?.run,
     jumpAt: p.jumpAt || null, jumpAgo: p.jumpAt ? now() - p.jumpAt : Infinity,
@@ -1272,6 +1274,22 @@ function renderPicker() {
   }).join('');
 }
 
+// 대기실 광장 배경: 각자 고른 테마로 (다른 사람에겐 그 사람 테마가 보임)
+let themeShown = null;
+function applyTheme() {
+  const src = themeImg(myThemeId(profile));
+  if (src === themeShown) return;
+  themeShown = src;
+  $('#plaza').style.backgroundImage = `url('${src}')`;
+}
+async function useTheme(id) {
+  if (!authUser || !profile || !themeOf(id) || !ownsTheme(profile, id)) return;
+  try {
+    await update(ref(db, `users/${authUser.uid}`), { theme: id === DEFAULT_THEME ? null : id });
+    toast(`광장 테마를 '${themeOf(id).label}'(으)로 바꿨어요.`, 'success');
+  } catch (e) { toast('바꾸지 못했어요. 다시 시도해주세요.', 'error'); console.warn(e); }
+}
+
 // ---------- 상점 ----------
 let shopOpen = false;
 let shopTab = 'animals';
@@ -1283,9 +1301,11 @@ function renderShop() {
   $('#shop-points').textContent = `${pts.toLocaleString()}P`;
   $('#shop-preview').innerHTML = lookFigure(look);
   $$('#shop-tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === shopTab));
+  $('#shop-list').classList.toggle('themes', shopTab === 'themes');
   const card = ({ key, kind, label, art, price, own, on }) => {
     let act;
     if (on) act = kind === 'acc' ? `<button class="btn btn-sm" data-unequip="${key}">벗기</button>` : '<span class="tag tag-success">사용 중</span>';
+    else if (own && kind === 'theme') act = `<button class="btn btn-sm btn-primary" data-theme="${key}">사용하기</button>`;
     else if (own) act = `<button class="btn btn-sm btn-primary" data-equip="${key}" data-kind="${kind}">${kind === 'acc' ? '착용하기' : '사용하기'}</button>`;
     else act = `<button class="btn btn-sm ${pts >= price ? 'btn-primary' : ''}" data-buy="${key}" data-kind="${kind}" ${pts >= price ? '' : 'disabled'}>${pts >= price ? `${price}P 구매` : `${price}P · 포인트 부족`}</button>`;
     return `<li class="shop-item ${own ? 'own' : 'locked'} ${on ? 'on' : ''}"><div class="art">${art}${own ? '' : `<span class="lockmark">${icon('lock')}</span>`}</div>`
@@ -1296,6 +1316,12 @@ function renderShop() {
       key: a.id, kind: 'animal', label: a.label, art: `<img src="${animalImg(a.id, 'front')}" alt="">`,
       price: ANIMAL_PRICE, own: ownsAnimal(profile, a.id), on: look.a === a.id,
     })).join('');
+  } else if (shopTab === 'themes') {
+    const cur = myThemeId(profile);
+    $('#shop-list').innerHTML = THEMES.map((t) => card({
+      key: t.id, kind: 'theme', label: t.label, art: `<img class="theme-art" src="${themeImg(t.id)}" alt="" loading="lazy">`,
+      price: THEME_PRICE, own: ownsTheme(profile, t.id), on: cur === t.id,
+    })).join('') + (THEMES.length < 2 ? '<li class="shop-soon text-tertiary">새 테마를 준비하고 있어요.</li>' : '');
   } else {
     $('#shop-list').innerHTML = SLOTS.map((s) => `<li class="shop-slot">${s.label}</li>` + ACCESSORIES.filter((it) => it.slot === s.key).map((it) => card({
       key: it.id, kind: 'acc', label: it.label, art: accHtml(it, 'acc-art'),
@@ -1306,6 +1332,7 @@ function renderShop() {
 async function buyItem(kind, id) {
   const uid = authUser?.uid;
   if (!uid || !profile) return;
+  if (kind === 'theme') return buyTheme(id);
   const isAnimal = kind === 'animal';
   const item = isAnimal ? animalOf(id) : accOf(id);
   if (!item) return;
@@ -1329,6 +1356,26 @@ async function buyItem(kind, id) {
     toast('구매하지 못했어요. 잠시 후 다시 시도해주세요.', 'error');
   }
 }
+// 테마 사기: 포인트 차감 + 구매 기록 + 바로 사용 (서버 규칙이 1000P 줄었는지 확인)
+async function buyTheme(id) {
+  const uid = authUser?.uid;
+  const t = themeOf(id);
+  if (!uid || !profile || !t || ownsTheme(profile, id)) return;
+  const pts = profile.points || 0;
+  if (pts < THEME_PRICE) { toast('포인트가 부족해요.', 'error'); return; }
+  if (!confirm(`'${t.label}' 테마를 ${THEME_PRICE}P에 살까요?\n지금 ${pts.toLocaleString()}P → 구매 후 ${(pts - THEME_PRICE).toLocaleString()}P`)) return;
+  try {
+    await update(ref(db), {
+      [`users/${uid}/points`]: pts - THEME_PRICE,
+      [`users/${uid}/owned/themes/${id}`]: true,
+      [`users/${uid}/theme`]: id,
+    });
+    toast(`'${t.label}' 테마를 샀어요! 대기실 광장 배경이 바뀌어요. (-${THEME_PRICE}P)`, 'success');
+  } catch (e) {
+    console.warn(e);
+    toast('구매하지 못했어요. 잠시 후 다시 시도해주세요.', 'error');
+  }
+}
 $('#btn-shop').onclick = openShop;
 $('#btn-shop-back').onclick = closeShop;
 $('#shop-tabs').addEventListener('click', (e) => {
@@ -1341,6 +1388,7 @@ $('#shop-list').addEventListener('click', (e) => {
   const b = e.target.closest('button');
   if (!b || b.disabled) return;
   if (b.dataset.buy) guarded(b, () => buyItem(b.dataset.kind, b.dataset.buy));
+  else if (b.dataset.theme) guarded(b, () => useTheme(b.dataset.theme));
   else if (b.dataset.equip) {
     if (b.dataset.kind === 'animal') equip({ a: b.dataset.equip });
     else toggleAcc(b.dataset.equip);
@@ -1727,6 +1775,7 @@ function watchProfile(uid) {
       profile = s.val();
       profileLoaded = true;
       checkMyNick();
+      if (room) applyTheme();
       showHome();
     }, (e) => { console.warn('[계정]', e.message); }),
     onValue(ref(db, `admins/${uid}`), (s) => { isAdmin = s.val() === true; renderHeaderUser(); }, () => {}),

@@ -763,3 +763,9 @@ body.has-ready-bar { padding-bottom: 96px; }
 
 /* 확장 프로그램이 없을 때 준비 막대 안내 */
 .ready-bar.no-ext .ready-wait { color: var(--color-warning); font-weight: 600; }
+
+/* 상점: 광장 테마 (넓은 카드, 배경 미리보기) */
+.shop-list.themes { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+.shop-list.themes .shop-item .art { height: auto; aspect-ratio: 1672 / 941; overflow: hidden; border-radius: 8px; background: #bfe3ff; }
+.shop-list.themes .shop-item .art img.theme-art { width: 100%; height: 100%; max-height: none; object-fit: cover; display: block; }
+.shop-list .shop-soon { grid-column: 1 / -1; padding: 12px 4px; font-size: 13px; }
