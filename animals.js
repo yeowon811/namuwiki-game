@@ -64,7 +64,7 @@ export const walkFrames = (id) => (BY_ID.get(id)?.runOnly ? [1] : [0, 1]);
 export const accOf = (id) => ACC_BY_ID.get(id) || null;
 // 액세서리를 쓸 수 있는 캐릭터인지 (noAcc면 착용해 둔 것도 안 보임, 다른 캐릭터로 바꾸면 다시 보임)
 export const canWearAcc = (id) => !BY_ID.get(id)?.noAcc;
-export const ANIMAL_VER = 5; // 그림을 바꾸면 올려서 캐시를 새로 받게 함
+export const ANIMAL_VER = 6; // 그림을 바꾸면 올려서 캐시를 새로 받게 함
 export const animalImg = (id, view = 'front') => `img/animals/${id}-${view}.webp?v=${ANIMAL_VER}`;
 export const accImg = (id) => `img/acc/${id}.webp?v=${ANIMAL_VER}`;
 export const VIEWS = ['front', 'back', 'left1', 'left2', 'right1', 'right2'];
