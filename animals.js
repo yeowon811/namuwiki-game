@@ -18,6 +18,7 @@ export const ANIMALS = [
   { id: 'fox', label: '여우', emoji: '🦊' },
   { id: 'sheep', label: '양', emoji: '🐑' },
   { id: 'hamster', label: '햄스터', emoji: '🐹' },
+  { id: 'shark', label: '우주 상어', emoji: '🦈', noAcc: true }, // 헬멧을 쓰고 있어서 액세서리를 못 씀
 ];
 
 // 액세서리 부위: 부위마다 하나씩 착용
@@ -61,7 +62,9 @@ export const animalOf = (id) => BY_ID.get(id) || null;
 // 옆으로 움직일 때 쓰는 그림 번호: 보통은 1·2번을 번갈아, runOnly면 2번만
 export const walkFrames = (id) => (BY_ID.get(id)?.runOnly ? [1] : [0, 1]);
 export const accOf = (id) => ACC_BY_ID.get(id) || null;
-export const ANIMAL_VER = 4; // 그림을 바꾸면 올려서 캐시를 새로 받게 함
+// 액세서리를 쓸 수 있는 캐릭터인지 (noAcc면 착용해 둔 것도 안 보임, 다른 캐릭터로 바꾸면 다시 보임)
+export const canWearAcc = (id) => !BY_ID.get(id)?.noAcc;
+export const ANIMAL_VER = 5; // 그림을 바꾸면 올려서 캐시를 새로 받게 함
 export const animalImg = (id, view = 'front') => `img/animals/${id}-${view}.webp?v=${ANIMAL_VER}`;
 export const accImg = (id) => `img/acc/${id}.webp?v=${ANIMAL_VER}`;
 export const VIEWS = ['front', 'back', 'left1', 'left2', 'right1', 'right2'];
@@ -217,6 +220,7 @@ export function accPlace(animal, view, slot, item) {
 
 // 캐릭터 위에 얹을 액세서리 HTML (그림과 같은 상자 안에 넣음, font-size = 캐릭터 키)
 export function lookAccHtml(look, view) {
+  if (!canWearAcc(look?.a)) return '';
   const kind = viewKind(view);
   return LAYERS[kind].map((slot) => {
     const it = accOf(look?.[slot]);

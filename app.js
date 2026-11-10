@@ -9,9 +9,9 @@ import { firebaseConfig } from './firebase-config.js';
 import KEYWORDS from './keywords.js';
 import {
   ANIMALS, ACCESSORIES, SLOTS, ANIMAL_PRICE, ACC_PRICE,
-  animalOf, accOf, animalImg, accHtml, cleanLook, ownsAnimal, ownsAcc, lookAccHtml,
-} from './animals.js?v=10';
-import { createPlaza } from './plaza2d.js?v=10';
+  animalOf, accOf, animalImg, accHtml, cleanLook, ownsAnimal, ownsAcc, lookAccHtml, canWearAcc,
+} from './animals.js?v=11';
+import { createPlaza } from './plaza2d.js?v=11';
 import { THEMES, THEME_PRICE, DEFAULT_THEME, themeOf, themeImg, ownsTheme, myThemeId } from './themes.js?v=2';
 
 const $ = (s) => document.querySelector(s);
@@ -1179,9 +1179,11 @@ async function equip(patch) {
   if (room && me()) updates[`rooms/${room.code}/players/${playerId}/char`] = look;
   try { await update(ref(db), updates); } catch (e) { toast('바꾸지 못했어요. 다시 시도해주세요.', 'error'); console.warn(e); }
 }
+const NO_ACC_MSG = (a) => `${animalOf(a)?.label || '이 캐릭터'}는 액세서리를 착용할 수 없어요. 다른 캐릭터로 바꾸면 착용할 수 있어요.`;
 function toggleAcc(id) {
   const it = accOf(id);
   if (!it || !ownsAcc(profile, id)) return;
+  if (!canWearAcc(myLook().a)) { toast(NO_ACC_MSG(myLook().a), 'error'); return; }
   equip({ [it.slot]: myLook()[it.slot] === id ? null : id }); // 같은 걸 다시 누르면 벗기
 }
 
@@ -1267,9 +1269,13 @@ function renderPicker() {
     return `<button type="button" data-a="${a.id}" class="${mine.a === a.id ? 'active' : ''} ${own ? '' : 'locked'}" ${own ? '' : 'disabled'} aria-label="${a.label}${own ? '' : ' (잠김)'}">`
       + `<img src="${animalImg(a.id, 'icon')}" alt=""><span>${a.label}</span></button>`;
   }).join('');
+  const wear = canWearAcc(mine.a);
+  $('#char-no-acc').classList.toggle('hidden', wear);
+  $('#char-no-acc').textContent = wear ? '' : NO_ACC_MSG(mine.a);
   $('#char-accs').innerHTML = ACCESSORIES.map((it) => {
     const own = ownsAcc(profile, it.id);
-    return `<button type="button" data-acc="${it.id}" class="${mine[it.slot] === it.id ? 'active' : ''} ${own ? '' : 'locked'}" ${own ? '' : 'disabled'} aria-label="${it.label}${own ? '' : ' (잠김)'}">`
+    const ok = own && wear;
+    return `<button type="button" data-acc="${it.id}" class="${wear && mine[it.slot] === it.id ? 'active' : ''} ${ok ? '' : 'locked'}" ${ok ? '' : 'disabled'} aria-label="${it.label}${own ? (wear ? '' : ' (착용 불가)') : ' (잠김)'}">`
       + `${accHtml(it, 'acc-ico')}<span>${it.label}</span></button>`;
   }).join('');
 }
@@ -1302,9 +1308,11 @@ function renderShop() {
   $('#shop-preview').innerHTML = lookFigure(look);
   $$('#shop-tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === shopTab));
   $('#shop-list').classList.toggle('themes', shopTab === 'themes');
+  const wear = canWearAcc(look.a);
   const card = ({ key, kind, label, art, price, own, on }) => {
     let act;
-    if (on) act = kind === 'acc' ? `<button class="btn btn-sm" data-unequip="${key}">벗기</button>` : '<span class="tag tag-success">사용 중</span>';
+    if (kind === 'acc' && own && !wear) act = '<span class="tag">착용 불가</span>';
+    else if (on) act = kind === 'acc' ? `<button class="btn btn-sm" data-unequip="${key}">벗기</button>` : '<span class="tag tag-success">사용 중</span>';
     else if (own && kind === 'theme') act = `<button class="btn btn-sm btn-primary" data-theme="${key}">사용하기</button>`;
     else if (own) act = `<button class="btn btn-sm btn-primary" data-equip="${key}" data-kind="${kind}">${kind === 'acc' ? '착용하기' : '사용하기'}</button>`;
     else act = `<button class="btn btn-sm ${pts >= price ? 'btn-primary' : ''}" data-buy="${key}" data-kind="${kind}" ${pts >= price ? '' : 'disabled'}>${pts >= price ? `${price}P 구매` : `${price}P · 포인트 부족`}</button>`;
@@ -1325,8 +1333,9 @@ function renderShop() {
   } else {
     $('#shop-list').innerHTML = SLOTS.map((s) => `<li class="shop-slot">${s.label}</li>` + ACCESSORIES.filter((it) => it.slot === s.key).map((it) => card({
       key: it.id, kind: 'acc', label: it.label, art: accHtml(it, 'acc-art'),
-      price: ACC_PRICE, own: ownsAcc(profile, it.id), on: look[it.slot] === it.id,
+      price: ACC_PRICE, own: ownsAcc(profile, it.id), on: wear && look[it.slot] === it.id,
     })).join('')).join('');
+    if (!wear) $('#shop-list').insertAdjacentHTML('afterbegin', `<li class="shop-soon text-secondary">${NO_ACC_MSG(look.a)}</li>`);
   }
 }
 async function buyItem(kind, id) {
@@ -1804,7 +1813,7 @@ function watchProfile(uid) {
       profile = s.val();
       profileLoaded = true;
       checkMyNick();
-      if (room) applyTheme();
+      if (room) { applyTheme(); renderPicker(); } // 방 안에서 가진 것이 바뀌어도 고르기 목록에 바로 반영
       showHome();
     }, (e) => { console.warn('[계정]', e.message); }),
     onValue(ref(db, `admins/${uid}`), (s) => { isAdmin = s.val() === true; renderHeaderUser(); }, () => {}),
