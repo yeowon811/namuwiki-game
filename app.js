@@ -57,7 +57,9 @@ window.addEventListener('message', (e) => {
   const msg = e.data;
   if (msg.type === 'READY') {
     ext.ready = true;
+    ext.version = msg.version;
     ext.race = msg.race;
+    if (!extOk() && !ext.minWarned) { ext.minWarned = true; toast(OLD_EXT_MSG, 'warning'); }
     render();
     syncExt();
   } else if (msg.type === 'STATE') {
@@ -75,6 +77,17 @@ window.addEventListener('message', (e) => {
 
 // 자동 기록 확장 프로그램이 있어야 준비·시작·오늘의 챔피언 도전을 할 수 있음
 const NEED_EXT_MSG = '자동 기록 확장 프로그램을 설치해야 게임에 참가할 수 있어요. 시작 화면의 \'자동 기록 확장 프로그램 설치\'를 참고해 주세요.';
+// 확장 프로그램이 이 버전보다 낮으면 게임에 참가할 수 없음 (규칙이 바뀐 버전: 1.7.0 = '이전 문서로'는 막다른 문서에서만)
+const EXT_MIN = '1.7.0';
+const verGte = (a, b) => {
+  const x = String(a || '0').split('.').map(Number);
+  const y = String(b).split('.').map(Number);
+  for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0);
+  return true;
+};
+const extOk = () => ext.ready && verGte(ext.version, EXT_MIN);
+const OLD_EXT_MSG = `자동 기록 확장 프로그램을 새 버전(${EXT_MIN})으로 다시 설치해야 게임에 참가할 수 있어요. 시작 화면의 '자동 기록 확장 프로그램 설치' 순서대로 ZIP 파일을 다시 내려받아 extension 폴더를 다시 로드해 주세요.`;
+const extMsg = () => (ext.ready ? OLD_EXT_MSG : NEED_EXT_MSG);
 const raceKey = () => (room ? `${room.code}/${room.round}` : null);
 const extRaceIsCurrent = () => ext.race && room && ext.race.code === room.code && ext.race.round === room.round && ext.race.playerId === playerId;
 
@@ -511,7 +524,7 @@ function leaveLocal() {
 // ---------- 방장 동작 ----------
 function startRound() {
   if (!isHost()) return;
-  if (!ext.ready) { toast(NEED_EXT_MSG, 'warning'); return; }
+  if (!extOk()) { toast(extMsg(), 'warning'); return; }
   if (!room.daily && !allReady()) { toast(`아직 준비하지 않은 사람이 있어요: ${notReady().map((p) => p.name).join(', ')}`, 'warning'); return; }
   const relay = room.mode === 'relay';
   const picked = room.daily?.start ? { ...room.daily, target: room.daily.targets[room.daily.targets.length - 1] }
@@ -878,7 +891,7 @@ function submitDailyIfDone() {
 }
 
 $('#btn-daily').onclick = (e) => {
-  if (!ext.ready) { toast(NEED_EXT_MSG, 'warning'); return; }
+  if (!extOk()) { toast(extMsg(), 'warning'); return; }
   const name = getName();
   if (name) guarded(e.currentTarget, () => startDaily(name));
 };
@@ -945,7 +958,7 @@ const allReady = () => notReady().length === 0;
 let readySending = false;
 function setReady(on) {
   if (!room || !me() || isHost() || readySending) return;
-  if (on && !ext.ready) { toast(NEED_EXT_MSG, 'warning'); return; }
+  if (on && !extOk()) { toast(extMsg(), 'warning'); return; }
   readySending = true;
   update(roomRef(room.code, 'players', playerId), { ready: on ? true : null })
     .catch((e) => console.warn('[준비]', e.message))
@@ -957,7 +970,7 @@ function renderReady() {
   const host = isHost();
   const my = me();
   // 자동 준비: 대기실·결과 화면에서 준비가 안 되어 있으면 바로 준비
-  if (!host && my && !my.ready && autoReady() && ext.ready) setReady(true);
+  if (!host && my && !my.ready && autoReady() && extOk()) setReady(true);
   const need = mustReady();
   const waiting = notReady();
   const done = need.length - waiting.length;
@@ -965,17 +978,17 @@ function renderReady() {
   const bar = $('#ready-bar');
   showReadyBar(true);
   bar.querySelector('.ready-count').textContent = need.length ? `준비 ${done} / ${need.length}명` : '함께할 사람을 기다리는 중';
-  bar.querySelector('.ready-wait').textContent = !ext.ready ? '자동 기록 확장 프로그램이 있어야 참가할 수 있어요.'
+  bar.querySelector('.ready-wait').textContent = !extOk() ? (ext.ready ? `확장 프로그램을 새 버전(${EXT_MIN})으로 다시 설치해야 참가할 수 있어요.` : '자동 기록 확장 프로그램이 있어야 참가할 수 있어요.')
     : waiting.length ? `아직: ${waiting.map((p) => p.name).join(', ')}` : need.length ? '모두 준비 완료!' : '';
-  bar.classList.toggle('no-ext', !ext.ready);
+  bar.classList.toggle('no-ext', !extOk());
   bar.classList.toggle('all', need.length > 0 && ok);
   // 참가자: 준비 버튼 + 자동 준비
   const btn = bar.querySelector('.ready-btn');
   const on = !!my?.ready;
   btn.classList.toggle('hidden', host);
   bar.querySelector('.ready-auto').classList.toggle('hidden', host);
-  btn.textContent = on ? '✓ 준비 완료' : ext.ready ? '준비하기' : '확장 프로그램 필요';
-  btn.title = on ? '한 번 더 누르면 준비를 취소해요' : ext.ready ? '' : NEED_EXT_MSG;
+  btn.textContent = on ? '✓ 준비 완료' : extOk() ? '준비하기' : ext.ready ? '확장 프로그램 업데이트 필요' : '확장 프로그램 필요';
+  btn.title = on ? '한 번 더 누르면 준비를 취소해요' : extOk() ? '' : extMsg();
   btn.classList.toggle('btn-primary', !on);
   btn.classList.toggle('btn-success', on);
   bar.querySelector('.ready-auto-input').checked = autoReady();
@@ -983,14 +996,14 @@ function renderReady() {
   const start = bar.querySelector('.ready-start');
   start.classList.toggle('hidden', !host);
   start.innerHTML = ph === 'lobby' ? `${icon('play')}게임 시작` : `${icon('redo')}${room.daily ? '다시 도전' : '다음 판'}`;
-  start.disabled = !ext.ready || (!ok && !room.daily);
-  start.title = !ext.ready ? NEED_EXT_MSG : start.disabled ? '모두 준비해야 시작할 수 있어요.' : '';
+  start.disabled = !extOk() || (!ok && !room.daily);
+  start.title = !extOk() ? extMsg() : start.disabled ? '모두 준비해야 시작할 수 있어요.' : '';
   // 방장: 모두 준비해야 시작 가능
   for (const id of ['#btn-start', '#btn-again']) {
     const b = $(id);
     if (!b) continue;
-    b.disabled = host && (!ext.ready || (!ok && !room.daily));
-    b.title = !b.disabled ? '' : !ext.ready ? NEED_EXT_MSG : '모두 준비해야 시작할 수 있어요.';
+    b.disabled = host && (!extOk() || (!ok && !room.daily));
+    b.title = !b.disabled ? '' : !extOk() ? extMsg() : '모두 준비해야 시작할 수 있어요.';
   }
 }
 function showReadyBar(on) {
@@ -1417,7 +1430,9 @@ function render() {
   const ph = phase();
   lastPhase = ph;
   syncPresence();
-  $('#ext-installed').classList.toggle('hidden', !ext.ready);
+  $('#ext-installed').classList.toggle('hidden', !extOk());
+  $('#ext-old').classList.toggle('hidden', !ext.ready || extOk());
+  $('#ext-old-ver').textContent = ext.version || '알 수 없음';
   if (ph !== 'lobby') plaza?.pause();
   if (ph !== 'lobby' && ph !== 'results') showReadyBar(false);
   if (ph === 'home') { syncExt(); return showHome(); }

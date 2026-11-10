@@ -120,6 +120,82 @@
     if (res) setRace(res.race);
   }
 
+  // ---------- 막다른 문서 확인 ----------
+  // '이전 문서로'는 본문에 누를 수 있는 다른 문서 링크가 하나도 없을 때만 켬
+  // - 본문 = 제목(h1)이 있는 칸. 오른쪽 '최근 변경' 같은 옆 칸, 같은 문서 안 링크(목차·각주), 사용자 문서 링크는 셈하지 않음
+  // - 문서를 불러오는 중에는 링크가 0개로 보일 수 있어서, 같은 상태가 1.5초 이어져야 막다른 문서로 봄
+  const DEAD_STABLE_MS = 1500;
+  let deadEnd = false;
+  let deadKey = null;
+  let deadSince = 0;
+  const docTitle = (href) => {
+    try {
+      const u = new URL(href, location.href);
+      if (u.hostname !== 'namu.wiki' || !u.pathname.startsWith('/w/')) return null;
+      return decodeURIComponent(u.pathname.slice(3));
+    } catch { return null; }
+  };
+  function contentRoot(h1) {
+    // 제목에서 위로 올라가다가, 옆에 다른 칸(사이드바)이 나란히 있는 곳에서 멈춤 = 본문 칸
+    let el = h1;
+    while (el.parentElement && el.parentElement !== document.body) {
+      const r = el.getBoundingClientRect();
+      // 제목 줄 옆의 편집 버튼 같은 작은 것은 무시: 본문처럼 길쭉한 칸 옆에 큰 칸이 있을 때만
+      const side = r.height > 300 && [...el.parentElement.children].some((c) => {
+        if (c === el) return false;
+        const cr = c.getBoundingClientRect();
+        return cr.width > 150 && cr.height > 150 && (cr.left >= r.right - 4 || cr.right <= r.left + 4);
+      });
+      if (side) return el;
+      el = el.parentElement;
+    }
+    return el;
+  }
+  // 화면이 좁으면 '최근 변경' 목록이 본문 아래로 내려와서 같은 칸에 들어옴 → 따로 뺌
+  // (목록의 줄마다 '21초 전', '3분 전' 같은 시간이 붙어 있음)
+  const AGO = /\d+\s*(초|분|시간|일)\s*전\s*$/;
+  function inSideBox(a, h1) {
+    for (let e = a.parentElement, i = 0; e && i < 3; e = e.parentElement, i++) {
+      if (e.contains(h1)) return false;
+      if (e.tagName === 'LI' && AGO.test(e.textContent)) return true;
+    }
+    return false;
+  }
+  // true = 막다른 문서, false = 누를 링크 있음, null = 아직 모름 (불러오는 중)
+  function scanDeadEnd() {
+    const cur = currentTitle();
+    const h1 = document.querySelector('h1');
+    if (!h1 || !location.pathname.startsWith('/w/')) return null;
+    const box = contentRoot(h1);
+    for (const a of box.querySelectorAll('a[href]')) {
+      const t = docTitle(a.href);
+      if (!t || t === cur || t.startsWith('사용자:')) continue;
+      if (a.closest('[hidden]') || !a.getClientRects().length) continue; // 안 보이는 링크
+      if (inSideBox(a, h1)) continue;
+      return false;
+    }
+    return true;
+  }
+  function updateDeadEnd() {
+    const key = location.href.split('#')[0];
+    if (key !== deadKey) { deadKey = key; deadSince = 0; }
+    const d = scanDeadEnd();
+    let next = false;
+    if (d === true) {
+      if (!deadSince) deadSince = Date.now();
+      next = Date.now() - deadSince >= DEAD_STABLE_MS;
+    } else deadSince = 0;
+    if (next !== deadEnd) { deadEnd = next; if (race && root) updateReturnBtn(); }
+  }
+  function updateReturnBtn() {
+    const ret = root?.querySelector('.ret');
+    if (!ret || !race) return;
+    ret.disabled = !(race.canReturn && deadEnd);
+    ret.title = !race.canReturn ? '돌아갈 문서가 없어요.'
+      : deadEnd ? `'${race.returnTitle}'(으)로 돌아가요. 규칙 위반이 아니고 클릭 1번으로만 세요.`
+      : '누를 수 있는 링크가 하나도 없는 막다른 문서에서만 쓸 수 있어요.';
+  }
+
   // ---------- HUD ----------
   let host, root, timer, toastTimer;
   let seenFinished = null; // 이미 알림을 띄운 도착자
@@ -276,7 +352,7 @@
             <span class="stat"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7.5V12l3 2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span class="time"></span></span>
           </div>
           <div class="acts">
-            <button type="button" class="ret" title="막다른 문서일 때 직전 문서로 돌아가요. 규칙 위반이 아니고 클릭 1번으로만 세요.">↩ 이전 문서로</button>
+            <button type="button" class="ret" title="누를 수 있는 링크가 하나도 없는 막다른 문서에서만 직전 문서로 돌아가요.">↩ 이전 문서로</button>
             <button type="button" class="hintb" title="목표 문서가 무엇인지 짧은 설명을 봐요. 페널티가 있어요.">💡 힌트</button>
           </div>
           <div class="hint" hidden></div>
@@ -291,6 +367,8 @@
     root.querySelector('.eb').addEventListener('click', () => { root.querySelector('.end').hidden = true; if (!race) removeHud(); });
     root.querySelector('.ret').addEventListener('click', async () => {
       if (!race?.canReturn) return;
+      updateDeadEnd();
+      if (!deadEnd) { toast('이 문서에는 누를 수 있는 링크가 있어요. 막다른 문서에서만 돌아갈 수 있어요.', 3000, 'warning'); return; }
       const res = await send({ type: 'RETURN' });
       if (res?.returnTo) toast(`이전 문서 '${res.returnTo}'(으)로 돌아가요. (클릭 +1)`, 2500, 'info');
       if (res?.race) setRace(res.race);
@@ -559,9 +637,7 @@
     }
     root.querySelector('.clicks').textContent = `${race.clicks}클릭`;
     // 되돌아가기 / 힌트
-    const ret = root.querySelector('.ret');
-    ret.disabled = !race.canReturn;
-    ret.title = race.canReturn ? `'${race.returnTitle}'(으)로 돌아가요. 규칙 위반이 아니고 클릭 1번으로만 세요.` : '돌아갈 문서가 없어요.';
+    updateReturnBtn();
     root.querySelector('.hintb').disabled = !!race.finished || !!race.dq;
     // 위반 알림
     if (sameRace && race.violations > prevStrikes) {
@@ -607,5 +683,6 @@
     if (res?.race) replayStickyToast();
     check();
     setInterval(check, 250);
+    setInterval(() => { if (race) updateDeadEnd(); }, 500);
   });
 })();

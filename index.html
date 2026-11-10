@@ -194,6 +194,7 @@
           <summary class="collapse-header"><svg class="ic arrow"><use href="#i-right"/></svg>자동 기록 확장 프로그램 설치 <span class="tag tag-default">PC 크롬·엣지</span></summary>
           <div class="collapse-content">
             <div id="ext-installed" class="alert alert-success hidden"><svg class="ic alert-icon"><use href="#i-check"/></svg><span>이 브라우저에는 이미 설치되어 있어요.</span></div>
+            <div id="ext-old" class="alert alert-warning hidden"><svg class="ic alert-icon"><use href="#i-warn"/></svg><span>설치된 확장 프로그램이 예전 버전(<span id="ext-old-ver"></span>)이라 게임에 참가할 수 없어요. 아래 순서대로 ZIP 파일을 다시 내려받아 다시 설치해 주세요. (이미 설치한 것은 확장 프로그램 화면에서 삭제한 뒤 새로 로드하면 돼요)</span></div>
             <ol class="steps-list">
               <li><a href="https://github.com/yeowon811/namuwiki-game/archive/refs/heads/main.zip">ZIP 파일</a>을 내려받아 압축을 풀어요.</li>
               <li>주소창에 <code>chrome://extensions</code>를 입력해요. 엣지라면 <code>edge://extensions</code>예요.</li>
@@ -506,6 +507,6 @@
   <div id="toast" class="message" role="status"></div>
 
   <!-- 코드를 바꾸면 ?v= 숫자를 올려서 브라우저 캐시에 남은 옛 파일을 쓰지 않게 함 -->
-  <script type="module" src="app.js?v=61"></script>
+  <script type="module" src="app.js?v=62"></script>
 </body>
 </html>
