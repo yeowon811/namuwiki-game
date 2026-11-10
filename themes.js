@@ -8,7 +8,12 @@ export const THEME_VER = 1; // 그림을 바꾸면 올려서 캐시를 새로 �
 
 export const THEMES = [
   { id: DEFAULT_THEME, label: '기본 광장', src: 'img/lobby.webp?v=1' },
-  // 예) { id: 'beach', label: '해변' },
+  { id: 'spring', label: '봄' },
+  { id: 'summer', label: '여름' },
+  { id: 'autumn', label: '가을' },
+  { id: 'winter', label: '겨울' },
+  { id: 'sea', label: '바다' },
+  { id: 'space', label: '우주' },
 ];
 
 export const themeOf = (id) => THEMES.find((t) => t.id === id) || null;
