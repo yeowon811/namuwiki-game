@@ -587,6 +587,8 @@ code {
 .charfig .accs { position: absolute; inset: 0; pointer-events: none; }
 /* 액세서리 위치·크기는 animals.js의 lookAccHtml이 정함 (em = 캐릭터 키) */
 .charfig .acc { position: absolute; display: block; height: auto; max-width: none; }
+/* 옷: 옷 입은 그림이 기본 그림을 대신함 */
+.charfig:has(> .accs > .acc-outfit) > img { visibility: hidden; }
 .pz2-ch .shadow {
   position: absolute; left: 0; top: 0; width: 46px; height: 12px; border-radius: 50%;
   background: radial-gradient(rgba(0,0,0,.28), rgba(0,0,0,0) 70%);

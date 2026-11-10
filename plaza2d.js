@@ -3,7 +3,7 @@
 // - 걷는 방향에 따라 앞·옆·뒷모습으로 바뀜, 뒤쪽(위)으로 갈수록 작게 보임
 // - 방향키 / WASD / 바닥 클릭 / 화면 방향 버튼으로 이동, Shift 달리기, Space 점프
 // 위치(x, y)는 배경 그림 기준 0~1 (y = 발 위치)
-import { animalImg, lookAccHtml, VIEWS, walkFrames } from './animals.js?v=13';
+import { animalImg, lookAccHtml, lookOutfitImgs, VIEWS, walkFrames } from './animals.js?v=14';
 
 // 걸을 수 있는 바닥 (배경 그림의 타일 광장, 타원)
 const FLOOR = { cx: 0.5, cy: 0.635, rx: 0.38, ry: 0.245 };
@@ -64,7 +64,9 @@ export function createPlaza(container, { onMove, onJump }) {
     if (c) {
       if (c.animal !== p.a) for (const v of VIEWS) new Image().src = animalImg(p.a, v);
       c.animal = p.a;
-      c.look = lookOf(p);
+      const look = lookOf(p);
+      if (look.a !== c.look.a || look.body !== c.look.body) for (const u of lookOutfitImgs(look)) new Image().src = u;
+      c.look = look;
       return c;
     }
     const node = document.createElement('div');
@@ -73,6 +75,7 @@ export function createPlaza(container, { onMove, onJump }) {
       + '<div class="label"><div class="bubble"></div><div class="nm"></div></div>';
     layer.appendChild(node);
     for (const v of VIEWS) new Image().src = animalImg(p.a, v);
+    for (const u of lookOutfitImgs(lookOf(p))) new Image().src = u;
     const pos = clampFloor(p.x, p.y);
     c = {
       node, img: node.querySelector('img'), fig: node.querySelector('.fig'), inner: node.querySelector('.inner'),

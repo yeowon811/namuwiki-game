@@ -1,6 +1,7 @@
 // 캐릭터(동물)와 액세서리 목록 + 상점 가격 + 액세서리 위치
 // 동물 그림: img/animals/{id}-{front|back|left1|left2|right1|right2|icon}.webp (키 360px로 맞춤)
 // 액세서리 그림: img/acc/{id}.webp
+// 옷 입은 그림: img/animals/outfit/{id}-{view}-{옷 id}.webp (기본 그림 둘레에 OUTFIT_PAD px 여백, 같은 크기·위치)
 // 목록(아이디)을 바꾸면 database.rules.json의 허용 목록도 같이 바꿔야 해요.
 export const FREE_ANIMAL = 'cat'; // 처음부터 쓸 수 있는 캐릭터
 export const ANIMAL_PRICE = 500;
@@ -23,12 +24,12 @@ export const ANIMALS = [
 
 // 액세서리 부위: 부위마다 하나씩 착용
 // off: true인 부위는 잠시 숨김 (상점·고르기 목록에 안 나오고, 이미 착용한 것도 안 보임. 산 기록은 그대로 남음)
-//   → 옷 입은 그림이 준비되면 off를 지워서 다시 켜요.
+//   → 옷 입은 그림이 준비되면 off를 지워서 다시 켜요. (옷은 켜짐: 옷 입은 그림으로 통째로 바꿔 보여줌)
 const ALL_SLOTS = [
   { key: 'head', label: '모자' },
   { key: 'eyes', label: '안경', off: true },
   { key: 'neck', label: '목', off: true },
-  { key: 'body', label: '옷', off: true },
+  { key: 'body', label: '옷' },
   { key: 'feet', label: '신발', off: true },
   { key: 'back', label: '가방' },
 ];
@@ -64,9 +65,21 @@ export const walkFrames = (id) => (BY_ID.get(id)?.runOnly ? [1] : [0, 1]);
 export const accOf = (id) => ACC_BY_ID.get(id) || null;
 // 액세서리를 쓸 수 있는 캐릭터인지 (noAcc면 착용해 둔 것도 안 보임, 다른 캐릭터로 바꾸면 다시 보임)
 export const canWearAcc = (id) => !BY_ID.get(id)?.noAcc;
-export const ANIMAL_VER = 7; // 그림을 바꾸면 올려서 캐시를 새로 받게 함
+export const ANIMAL_VER = 8; // 그림을 바꾸면 올려서 캐시를 새로 받게 함
 export const animalImg = (id, view = 'front') => `img/animals/${id}-${view}.webp?v=${ANIMAL_VER}`;
 export const accImg = (id) => `img/acc/${id}.webp?v=${ANIMAL_VER}`;
+// 옷: 옷 입은 캐릭터 그림을 기본 그림 위에 겹쳐서 보여줌 (기본 그림은 CSS로 숨김)
+export const OUTFIT_PAD = 30;
+const outfitOf = (look) => {
+  const it = canWearAcc(look?.a) ? accOf(look?.body) : null;
+  return it && it.slot === 'body' && FRAMES[look.a] ? it.id : null;
+};
+const outfitImg = (a, view, id) => `img/animals/outfit/${a}-${view}-${id}.webp?v=${ANIMAL_VER}`;
+// 미리 받아 둘 옷 그림들 (광장에서 방향을 바꿀 때 깜빡이지 않게)
+export const lookOutfitImgs = (look) => {
+  const id = outfitOf(look);
+  return id ? VIEWS.map((v) => outfitImg(look.a, v, id)) : [];
+};
 export const VIEWS = ['front', 'back', 'left1', 'left2', 'right1', 'right2'];
 
 // 가진 것 확인 (profile = users/{uid})
@@ -223,7 +236,16 @@ export function accPlace(animal, view, slot, item) {
 export function lookAccHtml(look, view) {
   if (!canWearAcc(look?.a)) return '';
   const kind = viewKind(view);
-  return LAYERS[kind].map((slot) => {
+  const outfit = outfitOf(look);
+  let head = '';
+  if (outfit) {
+    const W = FRAMES[look.a].w[VIEW_IDX[view]];
+    const P = OUTFIT_PAD;
+    head = `<img class="acc acc-outfit" src="${outfitImg(look.a, view, outfit)}" alt="" draggable="false" style="`
+      + `left:${(-P / W * 100).toFixed(3)}%;top:${(-P / H * 100).toFixed(3)}%;width:${((W + 2 * P) / H).toFixed(4)}em">`;
+  }
+  return head + LAYERS[kind].map((slot) => {
+    if (slot === 'body') return ''; // 옷은 위에서 통째로 그림
     const it = accOf(look?.[slot]);
     if (!it || it.slot !== slot) return '';
     if (slot === 'eyes' && kind === 'back') return '';
