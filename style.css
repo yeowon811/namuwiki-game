@@ -769,3 +769,9 @@ body.has-ready-bar { padding-bottom: 96px; }
 .shop-list.themes .shop-item .art { height: auto; aspect-ratio: 1672 / 941; overflow: hidden; border-radius: 8px; background: #bfe3ff; }
 .shop-list.themes .shop-item .art img.theme-art { width: 100%; height: 100%; max-height: none; object-fit: cover; display: block; }
 .shop-list .shop-soon { grid-column: 1 / -1; padding: 12px 4px; font-size: 13px; }
+
+/* 공지 창 */
+.notice-modal { width: min(440px, calc(100vw - 32px)); }
+.notice-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.notice-body { white-space: pre-wrap; word-break: break-word; line-height: 1.6; color: var(--color-text-secondary); max-height: 50vh; overflow-y: auto; margin-bottom: 4px; }
+.notice-modal .modal-footer { justify-content: space-between; }

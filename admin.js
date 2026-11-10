@@ -1,7 +1,7 @@
 // 관리자 페이지: 회원 목록, 포인트 조정, 이용 정지, 삭제 (예전 방식 가입의 승인/거절)
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getAuth, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
-import { getDatabase, ref, get, set, update, onValue, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
+import { getDatabase, ref, get, set, update, onValue, serverTimestamp, runTransaction } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
 import { firebaseConfig } from './firebase-config.js';
 
 const $ = (s) => document.querySelector(s);
@@ -11,6 +11,7 @@ const auth = getAuth(app);
 const db = getDatabase(app);
 
 let users = {};
+const picked = new Set(); // 일괄 지급할 회원 (체크한 사람)
 let presence = {}; // uid → { conns: { 창: { where, room, at } }, lastSeen }
 const names = new Map(); // uid → 실명 (private)
 let toastTimer;
@@ -25,16 +26,19 @@ const gate = (html) => { $('#adm-gate').classList.remove('hidden'); $('#adm-main
 const fmtDate = (t) => (typeof t === 'number' ? new Date(t).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' }) : '-');
 
 let unsub = null;
+let adminUid = null;
 onAuthStateChanged(auth, async (user) => {
   unsub?.();
   if (!user) return gate('먼저 <a class="link" href="./">게임 페이지</a>에서 로그인해 주세요.');
   const isAdmin = (await get(ref(db, `admins/${user.uid}`)).catch(() => null))?.val() === true;
   if (!isAdmin) return gate('관리자만 볼 수 있는 페이지예요.');
+  adminUid = user.uid;
   const me = (await get(ref(db, `users/${user.uid}`))).val();
   $('#hdr-user').textContent = me ? `${me.nick} (@${me.id})` : '';
   $('#adm-gate').classList.add('hidden');
   $('#adm-main').classList.remove('hidden');
   loadRoomStats();
+  const unsubNotice = onValue(ref(db, 'notice'), (s) => renderNotice(s.val()), (e) => { $('#notice-cur').textContent = `공지를 불러오지 못했어요. 데이터베이스 규칙을 다시 게시했는지 확인해 주세요. (${e.message})`; });
   const unsubPresence = onValue(ref(db, 'presence'), (s) => { presence = s.val() || {}; render(); },
     (e) => { $('#online-sum').textContent = `접속 현황을 불러오지 못했어요. 데이터베이스 규칙을 다시 게시했는지 확인해 주세요. (${e.message})`; });
   const unsubUsers = onValue(ref(db, 'users'), async (s) => {
@@ -47,7 +51,7 @@ onAuthStateChanged(auth, async (user) => {
     render();
     syncNicks();
   }, (e) => gate(`회원 목록을 불러오지 못했어요. (${esc(e.message)})`));
-  unsub = () => { unsubPresence(); unsubUsers(); };
+  unsub = () => { unsubNotice(); unsubPresence(); unsubUsers(); };
 });
 
 // 접속 현황
@@ -100,7 +104,7 @@ function render() {
     ? members.map((u) => {
       const st = u.stats || {};
       const seen = isOnline(u.uid) ? '<span class="on-dot"></span>접속 중' : `<span class="text-tertiary">${fmtAgo(presence[u.uid]?.lastSeen)}</span>`;
-      return `<tr><td class="nick">${esc(u.nick)}${u.approved ? '' : ' <span class="tag tag-error">정지</span>'}</td><td>@${esc(u.id)}</td><td>${esc(u.name)}</td>`
+      return `<tr class="${picked.has(u.uid) ? 'picked' : ''}"><td class="pick"><input type="checkbox" data-pick="${u.uid}" ${picked.has(u.uid) ? 'checked' : ''} aria-label="${esc(u.nick)} 선택"></td><td class="nick">${esc(u.nick)}${u.approved ? '' : ' <span class="tag tag-error">정지</span>'}</td><td>@${esc(u.id)}</td><td>${esc(u.name)}</td>`
         + `<td class="seen">${seen}</td>`
         + `<td class="num">${(u.points || 0).toLocaleString()}</td><td class="num">${st.games || 0}</td>`
         + `<td class="num">${st.win1 || 0}/${st.win2 || 0}/${st.win3 || 0}</td><td class="num">${st.daily1 || 0}</td>`
@@ -111,7 +115,16 @@ function render() {
         + `<button class="btn btn-sm btn-danger" data-act="delete" data-uid="${u.uid}">삭제</button>`
         + '</div></td></tr>';
     }).join('')
-    : '<tr><td colspan="9" class="adm-empty">회원이 없어요.</td></tr>';
+    : '<tr><td colspan="10" class="adm-empty">회원이 없어요.</td></tr>';
+  // 일괄 지급: 선택 상태
+  for (const uid of [...picked]) if (!users[uid]) picked.delete(uid); // 지워진 회원
+  const allOn = members.length > 0 && members.every((u) => picked.has(u.uid));
+  $('#pick-all').checked = allOn;
+  $('#pick-all').indeterminate = !allOn && members.some((u) => picked.has(u.uid));
+  $('#bulk-picked').textContent = `${picked.size}명 선택`;
+  $('#bulk-give-picked').disabled = picked.size === 0;
+  $('#bulk-clear').classList.toggle('hidden', picked.size === 0);
+  bulkMembers = members;
 }
 $('#member-search').addEventListener('input', render);
 
@@ -204,6 +217,73 @@ $('#btn-cleanup').onclick = async (e) => {
     loadRoomStats();
   }
 };
+
+// ---------- 공지 ----------
+let curNotice = null;
+function renderNotice(n) {
+  curNotice = n;
+  $('#notice-cur').innerHTML = n
+    ? `<b>지금 올라가 있는 공지</b> · ${fmtDate(n.at)}<div class="notice-now"><div class="nt">${esc(n.title)}</div><div class="nb">${esc(n.body)}</div></div>`
+    : '지금 올라가 있는 공지가 없어요.';
+  $('#notice-down').disabled = !n;
+  $('#notice-edit').disabled = !n;
+}
+$('#notice-edit').onclick = () => {
+  if (!curNotice) return;
+  $('#notice-in-title').value = curNotice.title || '';
+  $('#notice-in-body').value = curNotice.body || '';
+  $('#notice-in-title').focus();
+};
+$('#notice-up').onclick = async (e) => {
+  const title = $('#notice-in-title').value.trim();
+  const body = $('#notice-in-body').value.trim();
+  if (!title || !body) { toast('제목과 내용을 모두 적어 주세요.'); return; }
+  if (!confirm(`이 공지를 올릴까요?\n\n${title}\n\n접속한 모든 사람에게 떠요. ('더 이상 보지 않기'를 눌렀던 사람에게도 새 공지는 다시 떠요)`)) return;
+  const b = e.currentTarget;
+  b.disabled = true;
+  try {
+    await set(ref(db, 'notice'), { id: Date.now(), title, body, at: serverTimestamp(), by: adminUid });
+    $('#notice-in-title').value = '';
+    $('#notice-in-body').value = '';
+    toast('공지를 올렸어요.');
+  } catch (err) { toast(`올리지 못했어요: ${err.message}`); } finally { b.disabled = false; }
+};
+$('#notice-down').onclick = async () => {
+  if (!curNotice || !confirm('지금 공지를 내릴까요? 더 이상 아무에게도 뜨지 않아요.')) return;
+  try { await set(ref(db, 'notice'), null); toast('공지를 내렸어요.'); } catch (err) { toast(`내리지 못했어요: ${err.message}`); }
+};
+
+// ---------- 포인트 일괄 지급 ----------
+let bulkMembers = []; // 지금 목록에 보이는 회원 (검색 결과)
+$('#member-list').addEventListener('change', (e) => {
+  const c = e.target.closest('[data-pick]');
+  if (!c) return;
+  if (c.checked) picked.add(c.dataset.pick); else picked.delete(c.dataset.pick);
+  render();
+});
+$('#pick-all').addEventListener('change', (e) => {
+  for (const u of bulkMembers) if (e.target.checked) picked.add(u.uid); else picked.delete(u.uid);
+  render();
+});
+$('#bulk-clear').onclick = () => { picked.clear(); render(); };
+async function giveBulk(uids, label, btn) {
+  const amt = Number($('#bulk-amount').value);
+  if (!Number.isInteger(amt) || amt === 0) { toast('포인트를 정수로 적어 주세요. (빼려면 -50처럼)'); $('#bulk-amount').focus(); return; }
+  if (Math.abs(amt) > 100000) { toast('한 번에 100,000P까지만 바꿀 수 있어요.'); return; }
+  if (!uids.length) { toast('대상 회원이 없어요.'); return; }
+  const verb = amt > 0 ? `${amt.toLocaleString()}P를 줄까요?` : `${Math.abs(amt).toLocaleString()}P를 뺄까요? (0P 아래로는 안 내려가요)`;
+  if (!confirm(`${label} ${uids.length}명에게 ${verb}`)) return;
+  btn.disabled = true;
+  // 회원마다 지금 포인트에 더함 (그 사이 게임에서 포인트가 바뀌어도 안전하게)
+  const res = await Promise.allSettled(uids.map((uid) => runTransaction(ref(db, `users/${uid}/points`), (cur) => Math.max(0, (cur || 0) + amt))));
+  const fail = res.filter((r) => r.status === 'rejected');
+  btn.disabled = false;
+  if (fail.length) toast(`${uids.length - fail.length}명 완료, ${fail.length}명 실패 (${fail[0].reason?.message || ''})`);
+  else toast(`${label} ${uids.length}명에게 ${amt > 0 ? '+' : ''}${amt.toLocaleString()}P 했어요.`);
+  if (!fail.length) { $('#bulk-amount').value = ''; picked.clear(); render(); }
+}
+$('#bulk-give-picked').onclick = (e) => giveBulk([...picked].filter((uid) => users[uid]), '선택한 회원', e.currentTarget);
+$('#bulk-give-all').onclick = (e) => giveBulk(Object.entries(users).filter(([, u]) => u?.approved).map(([uid]) => uid), '모든 회원(정지 제외)', e.currentTarget);
 
 document.addEventListener('click', async (e) => {
   const b = e.target.closest('[data-act]');

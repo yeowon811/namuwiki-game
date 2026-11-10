@@ -16,6 +16,18 @@
     .adm-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
     .adm-table .acts { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
     .adm-table .nick { font-weight: 600; white-space: nowrap; }
+    .notice-form { display: flex; flex-direction: column; gap: 8px; }
+    .notice-form textarea { height: auto; padding: 8px 12px; resize: vertical; font: inherit; line-height: 1.5; }
+    .notice-acts { display: flex; gap: 8px; flex-wrap: wrap; }
+    .notice-now { margin-top: 6px; padding: 10px 12px; border-radius: 8px; background: var(--color-fill-quaternary, #f5f5f5); }
+    .notice-now .nt { font-weight: 600; color: var(--color-text); }
+    .notice-now .nb { white-space: pre-wrap; word-break: break-word; font-size: 13px; margin-top: 4px; }
+    .adm-table .pick { width: 28px; padding-right: 0; }
+    .adm-table .pick input { width: 16px; height: 16px; vertical-align: middle; cursor: pointer; }
+    .adm-table tr.picked td { background: var(--color-primary-bg); }
+    .bulk-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 16px 8px; padding: 10px 12px; border-radius: 8px; background: var(--color-fill-quaternary, #f5f5f5); }
+    .bulk-bar .bulk-title { font-weight: 600; font-size: 14px; margin-right: 4px; }
+    .bulk-bar #bulk-amount { width: 170px; height: 32px; }
     .adm-table td.seen { white-space: nowrap; font-size: 13px; }
     .on-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--color-success); margin-right: 6px; vertical-align: 1px; box-shadow: 0 0 0 3px var(--color-success-bg); }
     .adm-scroll { overflow-x: auto; padding: 0 16px 8px; }
@@ -42,6 +54,22 @@
 
     <div id="adm-main" class="hidden">
       <div class="card">
+        <div class="card-head"><span class="card-title">공지</span></div>
+        <div class="card-body notice-form">
+          <p id="notice-cur" class="text-secondary">불러오는 중…</p>
+          <input id="notice-in-title" class="input" maxlength="60" placeholder="제목 (60자까지)" aria-label="공지 제목" />
+          <textarea id="notice-in-body" class="input" maxlength="1000" rows="5" placeholder="내용 (1000자까지, 줄바꿈 그대로 보여요)" aria-label="공지 내용"></textarea>
+          <div class="notice-acts">
+            <button id="notice-up" class="btn btn-primary btn-sm" type="button">공지 올리기</button>
+            <button id="notice-edit" class="btn btn-sm" type="button" disabled>지금 공지 불러와서 고치기</button>
+            <button id="notice-down" class="btn btn-sm btn-danger" type="button" disabled>공지 내리기</button>
+          </div>
+          <p class="text-tertiary small">올리면 시작 화면에 있는 사람에게 바로 뜨고, 방 안에 있는 사람은 나왔을 때 떠요. 새 공지는 이전 공지를 대신해요.
+            사용자는 <b>닫기</b>(다음 접속 때 다시 뜸)나 <b>더 이상 보지 않기</b>(이 공지는 다시 안 뜸)를 누를 수 있어요.</p>
+        </div>
+      </div>
+
+      <div class="card">
         <div class="card-head"><span class="card-title"><span class="on-dot"></span>지금 접속 중</span><span id="online-count" class="text-tertiary"></span></div>
         <div class="card-body"><p id="online-sum" class="text-secondary">불러오는 중…</p></div>
         <div class="adm-scroll">
@@ -65,9 +93,17 @@
       <div class="card">
         <div class="card-head"><span class="card-title">회원</span><span id="member-count" class="text-tertiary"></span></div>
         <input id="member-search" class="input adm-search" placeholder="닉네임, 아이디, 이름으로 찾기" style="width:calc(100% - 32px)" />
+        <div class="bulk-bar">
+          <span class="bulk-title">포인트 일괄 지급</span>
+          <input id="bulk-amount" class="input" type="number" step="1" placeholder="예) 500, 빼기는 -100" aria-label="지급할 포인트" />
+          <button id="bulk-give-picked" class="btn btn-sm btn-primary" type="button" disabled>선택한 회원에게</button>
+          <button id="bulk-give-all" class="btn btn-sm" type="button">모든 회원에게</button>
+          <span id="bulk-picked" class="text-tertiary small">0명 선택</span>
+          <button id="bulk-clear" class="btn btn-sm btn-text hidden" type="button">선택 해제</button>
+        </div>
         <div class="adm-scroll">
           <table class="adm-table">
-            <thead><tr><th>닉네임</th><th>아이디</th><th>이름</th><th>접속</th><th class="num">포인트</th><th class="num">게임</th><th class="num">🥇/🥈/🥉</th><th class="num">👑</th><th></th></tr></thead>
+            <thead><tr><th class="pick"><input type="checkbox" id="pick-all" aria-label="보이는 회원 모두 선택"></th><th>닉네임</th><th>아이디</th><th>이름</th><th>접속</th><th class="num">포인트</th><th class="num">게임</th><th class="num">🥇/🥈/🥉</th><th class="num">👑</th><th></th></tr></thead>
             <tbody id="member-list"></tbody>
           </table>
         </div>
@@ -85,6 +121,6 @@
     </div>
   </main>
   <div id="toast" class="message" role="status"></div>
-  <script type="module" src="admin.js?v=7"></script>
+  <script type="module" src="admin.js?v=9"></script>
 </body>
 </html>

@@ -1767,9 +1767,38 @@ async function checkMyNick() {
   renderProfile();
 }
 
+// ---------- 공지 (관리자가 올림) ----------
+// 시작 화면에 있을 때 띄움 (방 안이면 나왔을 때). 닫기 = 이번 접속에서만 닫음, 더 이상 보지 않기 = 이 공지는 다시 안 띄움
+let notice = null;
+const NOTICE_HIDE = 'nr.noticeHidden';
+const NOTICE_CLOSED = 'nr.noticeClosed';
+function maybeShowNotice() {
+  const dlg = $('#notice-dialog');
+  if (!notice?.id || dlg.open) return;
+  if (room || !profile?.approved || shopOpen) return;
+  const id = String(notice.id);
+  if (store.get(NOTICE_HIDE) === id || store.get(NOTICE_CLOSED, ss) === id) return;
+  if (document.querySelector('dialog[open]')) return; // 다른 창이 떠 있으면 나중에
+  $('#notice-title').textContent = notice.title || '공지';
+  $('#notice-body').textContent = notice.body || '';
+  $('#notice-date').textContent = typeof notice.at === 'number' ? new Date(notice.at).toLocaleString('ko-KR', { dateStyle: 'medium', timeStyle: 'short' }) : '';
+  dlg.dataset.id = id;
+  dlg.showModal();
+}
+$('#notice-close').onclick = () => { store.set(NOTICE_CLOSED, $('#notice-dialog').dataset.id, ss); $('#notice-dialog').close(); };
+$('#notice-hide').onclick = () => { store.set(NOTICE_HIDE, $('#notice-dialog').dataset.id); $('#notice-dialog').close(); };
+$('#notice-dialog').addEventListener('cancel', () => store.set(NOTICE_CLOSED, $('#notice-dialog').dataset.id, ss)); // Esc = 닫기
+
 function watchProfile(uid) {
   profileUnsubs.forEach((u) => u());
   profileUnsubs = [
+    onValue(ref(db, 'notice'), (s) => {
+      notice = s.val();
+      // 공지를 내렸거나 바뀌었으면 떠 있는 창도 정리
+      const dlg = $('#notice-dialog');
+      if (dlg.open && dlg.dataset.id !== String(notice?.id)) dlg.close();
+      maybeShowNotice();
+    }, (e) => console.warn('[공지]', e.message)),
     onValue(ref(db, `users/${uid}`), (s) => {
       const prev = profile;
       profile = s.val();
@@ -1839,6 +1868,7 @@ function showHome() {
   syncPresence();
   if (shopOpen) { show('shop'); renderShop(); return; }
   show('home');
+  maybeShowNotice();
   renderProfile();
   renderQuests();
   watchLobbies();
@@ -1972,6 +2002,8 @@ async function claimRoundRewards() {
 // ---------- 오늘의 퀘스트 ----------
 // 매일 자정(한국 시간)에 쉬움 2개(30P) + 어려움 2개(50P)가 정해짐 (모두 같은 퀘스트)
 // 고르는 방법은 database.rules.json의 lastQuest 규칙과 똑같아야 해요 (서버가 오늘의 퀘스트인지 확인)
+// 출석하기: 매일 맨 위에 항상 있음, 들어오기만 하면 받을 수 있음 (쉬움과 같은 30P)
+const QUEST_ATTEND = { id: 'attend', title: '출석하기', target: 1, amt: 30, sub: '오늘 들어오면 바로 받아요', attend: true };
 const QUEST_EASY = [
   { id: 'games3', title: '오늘 3판 하기', target: 3, amt: 30 },
   { id: 'win1', title: '1등 하기', target: 1, amt: 30, sub: '3명 이상인 방' },
@@ -1990,12 +2022,13 @@ const questDay = () => Math.floor((now() + 9 * 3600000) / 86400000); // 한국 �
 function todaysQuests(day = questDay()) {
   const e = QUEST_PAIRS[day % 6];
   const h = QUEST_PAIRS_H[Math.floor(day / 6) % 3];
-  return [QUEST_EASY[e[0]], QUEST_EASY[e[1]], { ...QUEST_HARD[h[0]], hard: true }, { ...QUEST_HARD[h[1]], hard: true }];
+  return [QUEST_ATTEND, QUEST_EASY[e[0]], QUEST_EASY[e[1]], { ...QUEST_HARD[h[0]], hard: true }, { ...QUEST_HARD[h[1]], hard: true }];
 }
 // 오늘 진행 상황 (users/{uid}/quest, 날짜가 바뀌면 처음부터)
 const questProg = (day = questDay()) => (profile?.quest?.day === day ? profile.quest : { day });
 function questValue(q, prog) {
   switch (q.id) {
+    case 'attend': return 1;
     case 'games3': case 'games5': return prog.games || 0;
     case 'win1': case 'win3': return prog.wins || 0;
     case 'relay1': return prog.relay || 0;
@@ -2024,7 +2057,7 @@ function renderQuests() {
     const act = claimed ? '<span class="tag tag-success">받음</span>'
       : `<button class="btn btn-sm ${done ? 'btn-primary' : ''}" data-quest="${q.id}" ${done ? '' : 'disabled'}>${done ? `${q.amt}P 받기` : `${q.amt}P`}</button>`;
     return `<li class="quest ${claimed ? 'claimed' : done ? 'ready' : ''}">`
-      + `<span class="tag ${q.hard ? 'tag-warning' : 'tag-blue'} qlv">${q.hard ? '어려움' : '쉬움'}</span>`
+      + `<span class="tag ${q.attend ? 'tag-success' : q.hard ? 'tag-warning' : 'tag-blue'} qlv">${q.attend ? '출석' : q.hard ? '어려움' : '쉬움'}</span>`
       + `<div class="qinfo"><div class="qtitle">${q.title}${q.sub ? `<span class="qsub">${q.sub}</span>` : ''}</div>`
       + `<div class="qbar" role="progressbar" aria-valuemin="0" aria-valuemax="${q.target}" aria-valuenow="${v}"><i style="width:${(v / q.target) * 100}%"></i></div>`
       + `<div class="qnum">${v} / ${q.target}</div></div>`
@@ -2049,7 +2082,7 @@ async function claimQuest(id) {
       [`users/${uid}/lastQuest`]: { id: q.id, day, amt: q.amt },
       [`users/${uid}/questClaims/${q.id}`]: day,
     });
-    toast(`퀘스트 완료! +${q.amt} 포인트`, 'success');
+    toast(q.attend ? `출석 완료! +${q.amt} 포인트` : `퀘스트 완료! +${q.amt} 포인트`, 'success');
   } catch (e) {
     console.warn('[퀘스트]', e.message);
     toast('포인트를 받지 못했어요. 새로고침한 뒤 다시 시도해주세요.', 'error');
