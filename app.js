@@ -10,6 +10,7 @@ import { firebaseConfig } from './firebase-config.js';
 import {
   QUESTIONS, QA_COUNT, RCV_VER, checkQA, makeRecovery, relock, unlockKeys, recoverPassword, rememberPassword, recallPassword, forgetPasswords,
 } from './recovery.js?v=2';
+import { maskBad, hasBad } from './badwords.js?v=1';
 import KEYWORDS from './keywords.js';
 import {
   ANIMALS, ACCESSORIES, SLOTS, ANIMAL_PRICE, ACC_PRICE,
@@ -276,7 +277,7 @@ const PLAYER_NUMS = ['clicks', 'hints', 'violations', 'returns', 'away', 'leg', 
 const PLAYER_BOOLS = ['dq', 'auto', 'online', 'ready'];
 const PLAYER_STATUS = ['waiting', 'playing', 'finished', 'gaveup'];
 function cleanPlayer(id, p) {
-  const o = { ...p, id, name: String(p.name ?? '') };
+  const o = { ...p, id, name: maskBad(String(p.name ?? '')) };
   for (const k of PLAYER_NUMS) if (k in o && !isNum(o[k])) delete o[k];
   for (const k of PLAYER_BOOLS) if (k in o && typeof o[k] !== 'boolean') delete o[k];
   if ('status' in o && !PLAYER_STATUS.includes(o.status)) o.status = 'waiting';
@@ -788,7 +789,7 @@ function renderLobbies() {
         ? `<span class="avatar avatar-animal"><img src="${animalImg(a, 'icon')}" alt="${animalOf(a).label}"></span>`
         : '<span class="avatar avatar-animal"></span>';
       return `<li>${face}`
-        + `<div class="info"><span class="title">${esc(l.name || '이름 없음')}님의 방</span>`
+        + `<div class="info"><span class="title">${esc(maskBad(l.name || '이름 없음'))}님의 방</span>`
         + `<span class="meta">${STATE_TAG[l.state] || ''}<span class="tag">${esc(modeLabel(l.mode))}</span>${l.count}명 · ${code}</span></div>`
         + `<button class="btn btn-primary" data-join="${esc(code)}" ${full ? 'disabled' : ''}>${full ? '가득 참' : '참가하기'}</button></li>`;
     }).join('')
@@ -894,7 +895,7 @@ function renderDaily() {
   const medal = ['🥇', '🥈', '🥉'];
   $('#daily-top').innerHTML = list.length
     ? list.slice(0, 3).map((r, i) => `<li class="${r.id === playerId ? 'me' : ''}"><span class="md">${medal[i]}</span>`
-      + `${championFace(r)}<span class="nm">${esc(r.name)}</span><span class="tm">${fmtTimePrecise(r.ms)}</span></li>`).join('')
+      + `${championFace(r)}<span class="nm">${esc(maskBad(r.name))}</span><span class="tm">${fmtTimePrecise(r.ms)}</span></li>`).join('')
     : '<li class="empty">아직 기록이 없어요. 첫 챔피언이 되어 보세요!</li>';
   const myIdx = list.findIndex((r) => r.id === playerId);
   $('#daily-mine').textContent = myIdx >= 0 ? `내 최고 기록 ${fmtTimePrecise(list[myIdx].ms)} · ${list.length}명 중 ${myIdx + 1}등` : '';
@@ -1119,7 +1120,7 @@ $('#chat-form').addEventListener('submit', (e) => {
 });
 // 채팅 보내기 (대기실 채팅창, 나무위키 탭의 채팅창 공용). 보냈으면 true
 function sendChat(raw) {
-  const text = String(raw || '').replace(/\s+/g, ' ').trim().slice(0, 100);
+  const text = maskBad(String(raw || '').replace(/\s+/g, ' ').trim()).slice(0, 100); // 부적절한 단어는 ***로
   if (!text || !room || !me()) return false;
   if (Date.now() - lastChatAt < 600) return false; // 도배 방지
   lastChatAt = Date.now();
@@ -1297,7 +1298,9 @@ function avatar(p) {
 
 // ---------- 대기실 광장 ----------
 const BUBBLE_MS = 6000;
-const chatList = () => Object.entries(room?.chat || {}).sort(([a], [b]) => (a < b ? -1 : 1)).map(([id, m]) => ({ id, ...m }));
+// 받은 채팅도 부적절한 단어를 가림 (예전 화면에서 보낸 것까지)
+const chatList = () => Object.entries(room?.chat || {}).sort(([a], [b]) => (a < b ? -1 : 1))
+  .map(([id, m]) => ({ id, ...m, text: maskBad(m?.text), name: m?.name == null ? m?.name : maskBad(m.name) }));
 
 // 광장: 배경 그림 위를 동물이 걸어다님 (plaza2d.js)
 let plaza = null;
@@ -1956,6 +1959,7 @@ $('#signup-form').addEventListener('submit', (e) => {
   if (!name) return err('이름을 입력해주세요.');
   if (!nick) return err('닉네임을 입력해주세요.');
   if (nickLen(nick) > NICK_MAX) return err(`닉네임은 ${NICK_MAX}글자까지 쓸 수 있어요.`);
+  if (hasBad(nick)) return err('닉네임에 쓸 수 없는 말이 들어 있어요. 다른 닉네임을 써 주세요.');
   if (!ID_RE.test(id)) return err('아이디는 영어 소문자, 숫자, _ 로 4~16자예요.');
   const pw = $('#su-pw').value;
   if (pw.length < PW_MIN) return err(`비밀번호는 ${PW_MIN}자 이상이어야 해요.`);
@@ -2246,6 +2250,7 @@ $('#nick-form').addEventListener('submit', async (e) => {
   const nick = cleanName($('#nick-new').value);
   if (!nick) { $('#nick-error').textContent = '새 닉네임을 입력해주세요.'; return; }
   if (nickLen(nick) > NICK_MAX) { $('#nick-error').textContent = `닉네임은 ${NICK_MAX}글자까지 쓸 수 있어요.`; return; }
+  if (hasBad(nick)) { $('#nick-error').textContent = '닉네임에 쓸 수 없는 말이 들어 있어요. 다른 닉네임을 써 주세요.'; return; }
   if (nick === profile.nick) { $('#nick-error').textContent = '지금 닉네임과 같아요.'; return; }
   const cost = nickConflict ? 0 : 300;
   if ((profile.points || 0) < cost) { $('#nick-error').textContent = '포인트가 부족해요.'; return; }
