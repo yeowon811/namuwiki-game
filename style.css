@@ -794,3 +794,9 @@ body.guest .guest-only { display: flex !important; }
 body.guest #btn-shop, body.guest .pf-points, body.guest #pf-stats, body.guest .pf-actions, body.guest #qa-missing,
 body.guest #nick-conflict, body.guest #daily-card, body.guest #quest-card, body.guest #btn-char, body.guest #char-picker { display: none !important; }
 .guest-note .link, #guest-note .link { background: none; border: 0; padding: 0; font: inherit; color: var(--color-primary); cursor: pointer; text-decoration: underline; }
+
+/* 방 비밀번호 */
+.room-pw-box { display: flex; gap: 8px; margin-top: 8px; }
+.room-pw-box .input { width: 120px; letter-spacing: 4px; font-variant-numeric: tabular-nums; }
+#roompw-input { letter-spacing: 8px; text-align: center; font-variant-numeric: tabular-nums; }
+.open-rooms .lock { margin-right: 4px; }

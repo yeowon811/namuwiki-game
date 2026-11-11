@@ -433,10 +433,103 @@ async function joinRoom(code, name) {
     if (!name) throw new Error('닉네임을 입력해주세요.');
     if (Object.keys(players).length >= MAX_PLAYERS) throw new Error(`방이 가득 찼어요. (최대 ${MAX_PLAYERS}명)`);
     // 게임 도중에 들어오면 'waiting'(관전) 상태로 있다가 다음 판부터 참가
-    await set(roomRef(code, 'players', playerId), { name, status: 'waiting', online: true, joinedAt: serverTimestamp(), char: myLook(), ...guestMark() });
+    const record = { name, status: 'waiting', online: true, joinedAt: serverTimestamp(), char: myLook(), ...guestMark() };
+    if (snap.val().locked && snap.val().hostId !== playerId) await joinLocked(code, record);
+    else {
+      try {
+        await set(roomRef(code, 'players', playerId), record);
+      } catch (e) {
+        // 서버가 막으면 비밀번호가 걸린 방일 수 있음 → 비밀번호를 물어봄
+        if (!/permission.denied/i.test(`${e?.code} ${e?.message}`)) throw e;
+        await joinLocked(code, record);
+      }
+    }
   }
   enterRoom(code);
 }
+
+// ---------- 방 비밀번호 (숫자 4자리) ----------
+// 비밀번호는 roomPw/<코드>에 있고 방장만 읽을 수 있음. 들어오는 사람은 roomKeys/<코드>/<나>에 입력한 비밀번호를 쓰고,
+// 서버 규칙이 둘이 같을 때만 방에 들어오게 함 (2초에 한 번만 시도 가능)
+const ROOM_PW_RE = /^[0-9]{4}$/;
+const ROOM_PW_GAP_MS = 2200;
+let roomPwTriedAt = 0;
+function askRoomPw(msg = '') {
+  const dlg = $('#roompw-dialog');
+  $('#roompw-input').value = '';
+  $('#roompw-error').textContent = msg;
+  dlg.showModal();
+  $('#roompw-input').focus();
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (v) => { if (done) return; done = true; $('#roompw-form').removeEventListener('submit', onSubmit); dlg.removeEventListener('close', onClose); resolve(v); };
+    const onSubmit = (e) => {
+      if (e.submitter?.value !== 'ok') return;
+      e.preventDefault();
+      const pw = $('#roompw-input').value.trim();
+      if (!ROOM_PW_RE.test(pw)) { $('#roompw-error').textContent = '숫자 4자리를 입력해 주세요.'; return; }
+      finish(pw);
+      dlg.close();
+    };
+    const onClose = () => { if (!dlg.open) finish(null); }; // 앞서 닫힌 창의 늦게 온 'close' 신호는 무시
+    $('#roompw-form').addEventListener('submit', onSubmit);
+    dlg.addEventListener('close', onClose);
+  });
+}
+async function joinLocked(code, record) {
+  let msg = '';
+  for (;;) {
+    const pw = await askRoomPw(msg);
+    if (pw == null) throw new Error('비밀번호를 입력하지 않아서 방에 들어가지 않았어요.');
+    // 너무 빨리 다시 시도하면 서버가 막으므로 잠깐 기다림
+    const wait = roomPwTriedAt + ROOM_PW_GAP_MS - Date.now();
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    roomPwTriedAt = Date.now();
+    try {
+      await update(ref(db), { [`roomKeys/${code}/${playerId}`]: { pw, at: serverTimestamp() }, [`rooms/${code}/players/${playerId}`]: record });
+      return;
+    } catch (e) {
+      if (!/permission.denied/i.test(`${e?.code} ${e?.message}`)) throw e;
+      msg = '비밀번호가 맞지 않아요. 다시 입력해 주세요.';
+    }
+  }
+}
+// 방장: 비밀번호 켜기·바꾸기·끄기
+let roomPwShown = { code: null, pw: '' };
+async function loadRoomPw() {
+  if (!room || !isHost() || !room.locked) return;
+  if (roomPwShown.code === room.code) return;
+  roomPwShown = { code: room.code, pw: '' };
+  const pw = (await get(ref(db, `roomPw/${room.code}`)).catch(() => null))?.val() || '';
+  roomPwShown.pw = pw;
+  if (document.activeElement !== $('#room-pw')) $('#room-pw').value = pw;
+}
+$('#room-lock').onclick = async () => {
+  if (!isHost()) return;
+  if (room.locked) {
+    await update(ref(db), { [`rooms/${room.code}/locked`]: null, [`roomPw/${room.code}`]: null });
+    roomPwShown = { code: null, pw: '' };
+    $('#room-pw').value = '';
+    toast('비밀번호를 껐어요. 이제 누구나 들어올 수 있어요.', 'info');
+  } else {
+    $('#room-pw-box').classList.remove('hidden');
+    $('#room-pw').focus();
+  }
+};
+$('#room-pw-save').onclick = async () => {
+  if (!isHost()) return;
+  const pw = $('#room-pw').value.trim();
+  if (!ROOM_PW_RE.test(pw)) { toast('비밀번호는 숫자 4자리로 정해 주세요.', 'warning'); return; }
+  try {
+    await update(ref(db), { [`roomPw/${room.code}`]: pw, [`rooms/${room.code}/locked`]: true });
+    roomPwShown = { code: room.code, pw };
+    toast(`비밀번호를 ${pw}(으)로 정했어요. 들어올 사람에게 알려 주세요.`, 'success');
+  } catch (e) {
+    toast(/permission.denied/i.test(`${e?.code} ${e?.message}`) ? '비밀번호를 저장하지 못했어요. 데이터베이스 규칙을 다시 게시했는지 확인해 주세요.' : e.message, 'error');
+  }
+};
+$('#room-pw').addEventListener('input', (e) => { e.target.value = e.target.value.replace(/[^0-9]/g, '').slice(0, 4); });
+$('#roompw-input').addEventListener('input', (e) => { e.target.value = e.target.value.replace(/[^0-9]/g, '').slice(0, 4); });
 
 function enterRoom(code) {
   currentCode = code;
@@ -572,7 +665,7 @@ async function leaveRoom() {
   if (!code) return;
   const others = (r?.players || []).filter((p) => p.id !== playerId);
   if (others.length === 0) {
-    await update(ref(db), { [`rooms/${code}`]: null, [`lobbies/${code}`]: null, [`roomIndex/${code}`]: null });
+    await update(ref(db), { [`rooms/${code}`]: null, [`lobbies/${code}`]: null, [`roomIndex/${code}`]: null, [`roomPw/${code}`]: null, [`roomKeys/${code}`]: null });
     return;
   }
   const updates = { [`players/${playerId}`]: null };
@@ -676,6 +769,7 @@ function publishLobby() {
     count: room.players.length,
     state: room.state,
     mode: room.mode,
+    locked: room.locked ? true : null,
   };
   const key = JSON.stringify(summary);
   if (key === lobbySent.key && Date.now() - lobbySent.at < LOBBY_BEAT_MS) return;
@@ -791,7 +885,7 @@ function renderLobbies() {
         ? `<span class="avatar avatar-animal"><img src="${animalImg(a, 'icon')}" alt="${animalOf(a).label}"></span>`
         : '<span class="avatar avatar-animal"></span>';
       return `<li>${face}`
-        + `<div class="info"><span class="title">${esc(maskBad(l.name || '이름 없음'))}님의 방</span>`
+        + `<div class="info"><span class="title">${l.locked ? '<span class="lock" title="비밀번호가 걸린 방">🔒</span>' : ''}${esc(maskBad(l.name || '이름 없음'))}님의 방</span>`
         + `<span class="meta">${STATE_TAG[l.state] || ''}<span class="tag">${esc(modeLabel(l.mode))}</span>${l.count}명 · ${code}</span></div>`
         + `<button class="btn btn-primary" data-join="${esc(code)}" ${full ? 'disabled' : ''}>${full ? '가득 참' : '참가하기'}</button></li>`;
     }).join('')
@@ -1014,7 +1108,7 @@ async function destroyRoom(reason = 'host') {
   await update(ref(db), { [`rooms/${code}/closed`]: reason === 'idle' ? 'idle' : true, [`lobbies/${code}`]: null });
   // 다른 사람들이 '없앰' 표시를 받을 시간을 잠깐 준 뒤 지움
   await new Promise((r) => setTimeout(r, 1500));
-  await update(ref(db), { [`rooms/${code}`]: null, [`roomIndex/${code}`]: null });
+  await update(ref(db), { [`rooms/${code}`]: null, [`roomIndex/${code}`]: null, [`roomPw/${code}`]: null, [`roomKeys/${code}`]: null });
 }
 
 // ---------- 로비 이벤트 ----------
@@ -1534,6 +1628,16 @@ function render() {
     $('#winners').disabled = !host;
     $('#public-room').setAttribute('aria-checked', String(room.public !== false));
     $('#public-room').disabled = !host;
+    $('#room-lock').setAttribute('aria-checked', String(!!room.locked));
+    $('#room-lock').disabled = !host;
+    if (!host || !room.locked) {
+      if (!host) $('#room-pw-box').classList.add('hidden');
+      if (!room.locked && document.activeElement !== $('#room-pw') && $('#room-pw-box').classList.contains('hidden')) $('#room-pw').value = '';
+    } else $('#room-pw-box').classList.remove('hidden');
+    $('#room-pw-desc').textContent = host
+      ? (room.locked ? '새로 들어오는 사람은 이 비밀번호를 입력해야 해요. 바꾸려면 새 숫자를 넣고 저장하세요.' : '켜면 새로 들어오는 사람은 숫자 4자리 비밀번호를 입력해야 해요. 이미 방에 있는 사람은 그대로예요.')
+      : (room.locked ? '🔒 비밀번호가 걸린 방이에요.' : '비밀번호가 걸려 있지 않아요.');
+    loadRoomPw();
     $('#legs-item').classList.toggle('hidden', room.mode !== 'relay');
     $('#legs').value = String(room.legs || 2);
     $('#legs').disabled = !host;
@@ -2669,7 +2773,7 @@ async function cleanupStaleRooms() {
     ]);
     const cutoff = now() - STALE_ROOM_MS;
     const updates = {};
-    const drop = (code) => { updates[`rooms/${code}`] = null; updates[`lobbies/${code}`] = null; updates[`roomIndex/${code}`] = null; };
+    const drop = (code) => { updates[`rooms/${code}`] = null; updates[`lobbies/${code}`] = null; updates[`roomIndex/${code}`] = null; updates[`roomPw/${code}`] = null; updates[`roomKeys/${code}`] = null; };
     const index = idx.val() || {};
     for (const [code, v] of Object.entries(index)) {
       if (!(typeof v?.lastActive === 'number' && v.lastActive > cutoff)) drop(code);
