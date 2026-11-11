@@ -84,7 +84,7 @@ window.addEventListener('message', (e) => {
 // 자동 기록 확장 프로그램이 있어야 준비·시작·오늘의 챔피언 도전을 할 수 있음
 const NEED_EXT_MSG = '자동 기록 확장 프로그램을 설치해야 게임에 참가할 수 있어요. 시작 화면의 \'자동 기록 확장 프로그램 설치\'를 참고해 주세요.';
 // 확장 프로그램이 이 버전보다 낮으면 게임에 참가할 수 없음 (규칙이 바뀐 버전: 1.7.0 = '이전 문서로'는 막다른 문서에서만)
-const EXT_MIN = '1.7.0';
+const EXT_MIN = '1.8.0';
 const verGte = (a, b) => {
   const x = String(a || '0').split('.').map(Number);
   const y = String(b).split('.').map(Number);
@@ -92,8 +92,10 @@ const verGte = (a, b) => {
   return true;
 };
 const extOk = () => ext.ready && verGte(ext.version, EXT_MIN);
-const OLD_EXT_MSG = `자동 기록 확장 프로그램을 새 버전(${EXT_MIN})으로 바꿔야 게임에 참가할 수 있어요. 예전에 ZIP 파일로 설치했다면 삭제하고, 시작 화면의 '자동 기록 확장 프로그램 설치'에서 크롬 웹 스토어로 새로 설치해 주세요.`;
+const OLD_EXT_MSG = `확장 프로그램을 새 버전(${EXT_MIN})으로 업데이트해야 게임에 참가할 수 있어요. 준비 막대의 '업데이트 방법'을 눌러 주세요.`;
 const extMsg = () => (ext.ready ? OLD_EXT_MSG : NEED_EXT_MSG);
+// 준비한 사람의 확장 프로그램 버전이 충분한지 (예전 화면에서 준비한 사람은 버전이 없어서 '업데이트 필요')
+const playerExtOk = (p) => typeof p?.ext === 'string' && verGte(p.ext, EXT_MIN);
 const raceKey = () => (room ? `${room.code}/${room.round}` : null);
 const extRaceIsCurrent = () => ext.race && room && ext.race.code === room.code && ext.race.round === room.round && ext.race.playerId === playerId;
 
@@ -282,6 +284,7 @@ function cleanPlayer(id, p) {
   for (const k of PLAYER_NUMS) if (k in o && !isNum(o[k])) delete o[k];
   for (const k of PLAYER_BOOLS) if (k in o && typeof o[k] !== 'boolean') delete o[k];
   if ('status' in o && !PLAYER_STATUS.includes(o.status)) o.status = 'waiting';
+  if ('ext' in o && (typeof o.ext !== 'string' || o.ext.length > 16)) delete o.ext;
   if ('legTimes' in o) o.legTimes = Array.isArray(o.legTimes) ? o.legTimes.filter(isNum) : [];
   if ('path' in o) o.path = Array.isArray(o.path) ? o.path.map((t) => String(t ?? '')) : [];
   if ('steps' in o) o.steps = Array.isArray(o.steps) ? o.steps.filter((s) => s && typeof s === 'object').map((s) => ({ ...s, title: String(s.title ?? '') })) : [];
@@ -1139,14 +1142,14 @@ $('#round-trip').onclick = () => isHost() && update(roomRef(room.code), { roundT
 const AUTO_READY_KEY = 'nr.autoReady';
 const autoReady = () => store.get(AUTO_READY_KEY) === '1';
 const mustReady = () => (room?.players || []).filter((p) => p.id !== room.hostId && p.online);
-const notReady = () => mustReady().filter((p) => !p.ready);
+const notReady = () => mustReady().filter((p) => !p.ready || !playerExtOk(p));
 const allReady = () => notReady().length === 0;
 let readySending = false;
 function setReady(on) {
   if (!room || !me() || isHost() || readySending) return;
-  if (on && !extOk()) { toast(extMsg(), 'warning'); return; }
+  if (on && !extOk()) { if (ext.ready) openExtUpdate(); else toast(extMsg(), 'warning'); return; }
   readySending = true;
-  update(roomRef(room.code, 'players', playerId), { ready: on ? true : null })
+  update(roomRef(room.code, 'players', playerId), { ready: on ? true : null, ext: on ? ext.version : null })
     .catch((e) => console.warn('[준비]', e.message))
     .finally(() => { readySending = false; });
 }
@@ -1164,8 +1167,12 @@ function renderReady() {
   const bar = $('#ready-bar');
   showReadyBar(true);
   bar.querySelector('.ready-count').textContent = need.length ? `준비 ${done} / ${need.length}명` : '함께할 사람을 기다리는 중';
-  bar.querySelector('.ready-wait').textContent = !extOk() ? (ext.ready ? `확장 프로그램을 새 버전(${EXT_MIN})으로 다시 설치해야 참가할 수 있어요.` : '자동 기록 확장 프로그램이 있어야 참가할 수 있어요.')
-    : waiting.length ? `아직: ${waiting.map((p) => p.name).join(', ')}` : need.length ? '모두 준비 완료!' : '';
+  const oldExt = ext.ready && !extOk();
+  bar.querySelector('.ready-update').classList.toggle('hidden', !oldExt);
+  if (oldExt && !extUpdateShown) { extUpdateShown = true; setTimeout(openExtUpdate, 300); }
+  if (!host && my?.ready && extOk() && my.ext !== ext.version) update(roomRef(room.code, 'players', playerId), { ext: ext.version }).catch(() => {});
+  bar.querySelector('.ready-wait').textContent = !extOk() ? (ext.ready ? `버전 업데이트를 진행해 주세요. (지금 ${ext.version || '?'} → ${EXT_MIN} 이상 필요)` : '자동 기록 확장 프로그램이 있어야 참가할 수 있어요.')
+    : waiting.length ? `아직: ${waiting.map((p) => (p.ready ? `${p.name}(업데이트 필요)` : p.name)).join(', ')}` : need.length ? '모두 준비 완료!' : '';
   bar.classList.toggle('no-ext', !extOk());
   bar.classList.toggle('all', need.length > 0 && ok);
   // 참가자: 준비 버튼 + 자동 준비
@@ -1198,6 +1205,15 @@ function showReadyBar(on) {
 }
 $$('.ready-btn').forEach((b) => (b.onclick = () => setReady(!me()?.ready)));
 $('#ready-bar .ready-start').onclick = () => startRound();
+// 확장 프로그램 업데이트 안내 창 (예전 버전이면 방에 들어올 때 한 번 뜸, 준비 막대의 '업데이트 방법'으로 다시 열기)
+let extUpdateShown = false;
+function openExtUpdate() {
+  const dlg = $('#ext-update-dialog');
+  $('#ext-update-ver').textContent = ext.version || '알 수 없음';
+  if (!dlg.open) dlg.showModal();
+}
+$('#ready-bar .ready-update').onclick = openExtUpdate;
+$('#ext-update-reload').onclick = () => location.reload();
 $$('.ready-auto-input').forEach((c) => (c.onchange = (e) => {
   store.set(AUTO_READY_KEY, e.target.checked ? '1' : '0');
   if (e.target.checked && me() && !me().ready) setReady(true);
@@ -1607,7 +1623,7 @@ $('#shop-list').addEventListener('click', (e) => {
 function playerRow(p, extra = '') {
   const tags = [];
   if (p.id === room.hostId) tags.push('<span class="tag tag-warning">방장</span>');
-  else if (phase() === 'lobby' || phase() === 'results') tags.push(p.ready ? '<span class="tag tag-success">준비</span>' : '<span class="tag">대기</span>');
+  else if (phase() === 'lobby' || phase() === 'results') tags.push(p.ready && !playerExtOk(p) ? '<span class="tag tag-warning" title="확장 프로그램을 업데이트해야 해요">업데이트 필요</span>' : p.ready ? '<span class="tag tag-success">준비</span>' : '<span class="tag">대기</span>');
   if (p.id === playerId) tags.push('<span class="tag tag-blue">나</span>');
   const kick = isHost() && p.id !== playerId
     ? `<button class="kick" data-kick="${esc(p.id)}" title="${esc(p.name)}님 내보내기" aria-label="${esc(p.name)}님 내보내기">${icon('kick')}</button>` : '';

@@ -800,3 +800,8 @@ body.guest #nick-conflict, body.guest #daily-card, body.guest #quest-card, body.
 .room-pw-box .input { width: 120px; letter-spacing: 4px; font-variant-numeric: tabular-nums; }
 #roompw-input { letter-spacing: 8px; text-align: center; font-variant-numeric: tabular-nums; }
 .open-rooms .lock { margin-right: 4px; }
+
+/* 확장 프로그램 업데이트 버튼 (준비 막대) */
+.btn-warning-solid { background: var(--color-gold, #faad14); border-color: var(--color-gold, #faad14); color: #fff; }
+.btn-warning-solid:hover { filter: brightness(1.05); }
+#ext-update-dialog .steps-list { margin: 8px 0 12px; }

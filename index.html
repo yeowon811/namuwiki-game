@@ -6,7 +6,7 @@
   <title>나무위키 레이스</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" />
-  <link rel="stylesheet" href="style.css?v=35" />
+  <link rel="stylesheet" href="style.css?v=36" />
 </head>
 <body>
   <!-- 아이콘 모음 (Ant Design의 Outlined 스타일을 따라 그린 선 아이콘) -->
@@ -285,7 +285,7 @@
           <summary class="collapse-header"><svg class="ic arrow"><use href="#i-right"/></svg>자동 기록 확장 프로그램 설치 <span class="tag tag-default">PC 크롬·엣지</span></summary>
           <div class="collapse-content">
             <div id="ext-installed" class="alert alert-success hidden"><svg class="ic alert-icon"><use href="#i-check"/></svg><span>이 브라우저에는 이미 설치되어 있어요.</span></div>
-            <div id="ext-old" class="alert alert-warning hidden"><svg class="ic alert-icon"><use href="#i-warn"/></svg><span>설치된 확장 프로그램이 예전 버전(<span id="ext-old-ver"></span>)이라 게임에 참가할 수 없어요. 예전에 ZIP 파일로 설치했다면 확장 프로그램 화면에서 삭제한 뒤, 아래 순서대로 크롬 웹 스토어에서 새로 설치해 주세요.</span></div>
+            <div id="ext-old" class="alert alert-warning hidden"><svg class="ic alert-icon"><use href="#i-warn"/></svg><span>설치된 확장 프로그램이 예전 버전(<span id="ext-old-ver"></span>)이라 게임에 참가할 수 없어요. 주소창에 <code>chrome://extensions</code>를 입력하고, 오른쪽 위 <b>개발자 모드</b>를 켠 뒤 <b>업데이트</b>를 눌러 주세요. 예전에 ZIP 파일로 설치했다면 삭제하고 아래 순서대로 크롬 웹 스토어에서 새로 설치해 주세요.</span></div>
             <ol class="steps-list">
               <li>크롬 웹 스토어의 <a href="https://chromewebstore.google.com/detail/%EB%82%98%EB%AC%B4%EC%9C%84%ED%82%A4%20%EB%A0%88%EC%9D%B4%EC%8A%A4%20%EB%8F%84%EC%9A%B0%EB%AF%B8/cdlcmcpihomfmnebgjakgmaecegmphap" target="_blank" rel="noopener">나무위키 레이스 도우미</a> 페이지를 열어요.</li>
               <li><b>Chrome에 추가</b>를 누르고, <b>확장 프로그램 추가</b>를 눌러요.</li>
@@ -550,6 +550,7 @@
     <div class="ready-bar-inner">
       <div class="ready-status"><span class="ready-count"></span><span class="ready-wait"></span></div>
       <div class="ready-actions">
+        <button type="button" class="btn btn-lg btn-warning-solid ready-update hidden">업데이트 방법</button>
         <label class="ready-auto" title="체크해 두면 매 판 자동으로 준비돼요"><input type="checkbox" class="ready-auto-input" id="ready-auto"> 자동 준비</label>
         <button type="button" class="btn btn-lg ready-btn"></button>
         <button type="button" class="btn btn-lg btn-primary ready-start"></button>
@@ -644,6 +645,23 @@
     </form>
   </dialog>
 
+  <dialog id="ext-update-dialog" class="modal">
+    <form method="dialog">
+      <div class="modal-title">⬆️ 버전 업데이트를 진행해 주세요</div>
+      <p class="text-secondary">자동 기록 확장 프로그램이 새 버전으로 바뀌었어요. 지금 버전(<b id="ext-update-ver"></b>)으로는 게임에 참가할 수 없어요.</p>
+      <ol class="steps-list">
+        <li>주소창에 <code>chrome://extensions</code>를 입력해요. (엣지는 <code>edge://extensions</code>)</li>
+        <li>오른쪽 위 <b>개발자 모드</b>를 켜고, 왼쪽 위에 생긴 <b>업데이트</b>를 눌러요.</li>
+        <li>이 페이지로 돌아와 <b>새로고침</b>을 눌러요.</li>
+      </ol>
+      <p class="text-tertiary small">업데이트가 안 되면 '나무위키 레이스 도우미'를 삭제하고 <a href="https://chromewebstore.google.com/detail/%EB%82%98%EB%AC%B4%EC%9C%84%ED%82%A4%20%EB%A0%88%EC%9D%B4%EC%8A%A4%20%EB%8F%84%EC%9A%B0%EB%AF%B8/cdlcmcpihomfmnebgjakgmaecegmphap" target="_blank" rel="noopener" class="link">크롬 웹 스토어</a>에서 다시 추가해 주세요. 예전에 ZIP 파일로 설치했다면 그것도 삭제해 주세요.</p>
+      <div class="modal-footer">
+        <button type="submit" class="btn">닫기</button>
+        <button type="button" id="ext-update-reload" class="btn btn-primary">새로고침</button>
+      </div>
+    </form>
+  </dialog>
+
   <!-- 공지 (관리자가 올림) -->
   <dialog id="notice-dialog" class="modal notice-modal" aria-labelledby="notice-title">
     <div class="notice-head"><span class="tag tag-blue">공지</span><span id="notice-date" class="text-tertiary small"></span></div>
@@ -658,6 +676,6 @@
   <div id="toast" class="message" role="status"></div>
 
   <!-- 코드를 바꾸면 ?v= 숫자를 올려서 브라우저 캐시에 남은 옛 파일을 쓰지 않게 함 -->
-  <script type="module" src="app.js?v=81"></script>
+  <script type="module" src="app.js?v=82"></script>
 </body>
 </html>
