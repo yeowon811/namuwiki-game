@@ -1,7 +1,7 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import {
   getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut,
-  updatePassword, reauthenticateWithCredential, EmailAuthProvider,
+  updatePassword, reauthenticateWithCredential, EmailAuthProvider, signInAnonymously, deleteUser,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import {
   getDatabase, ref, get, set, update, remove, push, onValue, onDisconnect, serverTimestamp, runTransaction,
@@ -1717,6 +1717,15 @@ const idToEmail = (id) => `${id}@${EMAIL_DOMAIN}`;
 // 새 비밀번호를 만들 때만 씀 (users/<uid>/pwSet이 true가 되면 이 비밀번호는 더 이상 맞지 않음)
 const idToPassword = (id) => `namurace-${id}-login`;
 const PW_MIN = 6;
+// 손님(로그인 없이): Firebase 익명 로그인. 이름 뒤에 '(손님)'이 붙고, 포인트·상점·퀘스트·오늘의 챔피언은 못 씀
+const GUEST_TAG = '(손님)';
+const GUEST_KEY = 'nr.guestName';
+const isGuest = () => !!authUser?.isAnonymous;
+function guestProfile() {
+  let name = store.get(GUEST_KEY) || '';
+  if (!name) { name = `손님${Math.floor(100 + Math.random() * 900)}`; store.set(GUEST_KEY, name); }
+  return { nick: `${name}${GUEST_TAG}`, approved: true, pwSet: true, rcv: 'guest', rcvV: RCV_VER, points: 0, stats: {}, guest: true };
+}
 let authUser = null;
 let profile = null; // users/<uid>
 let isAdmin = false;
@@ -1912,6 +1921,37 @@ $('#qa-form').addEventListener('submit', async (e) => {
   }
 });
 
+// 손님으로 하기
+$('#guest-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const name = cleanName($('#guest-name').value);
+  const errEl = $('#guest-error');
+  errEl.textContent = '';
+  if (!name) { errEl.textContent = '이름을 입력해 주세요.'; return; }
+  if (nickLen(name) > NICK_MAX) { errEl.textContent = `이름은 ${NICK_MAX}글자까지 쓸 수 있어요.`; return; }
+  if (hasBad(name)) { errEl.textContent = '이름에 쓸 수 없는 말이 들어 있어요.'; return; }
+  const btn = e.currentTarget.querySelector('button[type="submit"]');
+  btn.disabled = true;
+  try {
+    store.set(GUEST_KEY, name);
+    await signInAnonymously(auth);
+  } catch (err) {
+    console.warn('[손님]', err);
+    errEl.textContent = /operation-not-allowed|admin-restricted/.test(err?.code || '') ? '지금은 손님으로 할 수 없어요. 관리자에게 알려 주세요. (Firebase 익명 로그인이 꺼져 있음)' : authMessage(err);
+  } finally {
+    btn.disabled = false;
+  }
+});
+// 손님 → 로그인/회원가입 화면으로 (손님 계정은 지움)
+async function leaveGuest() {
+  if (room) return;
+  await stopPresence();
+  const u = auth.currentUser;
+  if (u?.isAnonymous) await deleteUser(u).catch(() => signOut(auth));
+  else await signOut(auth);
+}
+$$('.guest-join').forEach((b) => (b.onclick = leaveGuest));
+
 // 비밀번호 만들기 (예전 계정)
 $('#setpw-form').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -1960,6 +2000,7 @@ $('#signup-form').addEventListener('submit', (e) => {
   if (!nick) return err('닉네임을 입력해주세요.');
   if (nickLen(nick) > NICK_MAX) return err(`닉네임은 ${NICK_MAX}글자까지 쓸 수 있어요.`);
   if (hasBad(nick)) return err('닉네임에 쓸 수 없는 말이 들어 있어요. 다른 닉네임을 써 주세요.');
+  if (nick.includes('손님')) return err("닉네임에 '손님'은 쓸 수 없어요.");
   if (!ID_RE.test(id)) return err('아이디는 영어 소문자, 숫자, _ 로 4~16자예요.');
   const pw = $('#su-pw').value;
   if (pw.length < PW_MIN) return err(`비밀번호는 ${PW_MIN}자 이상이어야 해요.`);
@@ -2010,6 +2051,7 @@ $$('.btn-logout').forEach((b) => (b.onclick = async () => {
   if (room) return;
   await stopPresence();
   await forgetPasswords(); // 이 기기에 기억한 비밀번호도 지움 (같이 쓰는 컴퓨터 대비)
+  if (isGuest()) { await leaveGuest(); return; }
   await signOut(auth);
 }));
 
@@ -2030,6 +2072,7 @@ function armPresence() {
   onDisconnect(ref(db, `presence/${presenceUid}/lastSeen`)).set(serverTimestamp());
 }
 function syncPresence() {
+  if (isGuest()) return; // 손님은 회원 전용 기능을 쓰지 않음
   const uid = authUser?.uid;
   if (!uid || !netConnected || !profile?.approved) return;
   if (!presenceRef || presenceUid !== uid) {
@@ -2069,6 +2112,7 @@ onValue(ref(db, '.info/connected'), (s) => {
 let nickConflict = false;
 let nickCheckedFor = null;
 async function checkMyNick() {
+  if (isGuest()) return; // 손님은 회원 전용 기능을 쓰지 않음
   const uid = authUser?.uid;
   if (!uid || !profile?.nick || !profile.approved) return;
   const sig = `${uid}/${nickKey(profile.nick)}`;
@@ -2139,6 +2183,7 @@ onAuthStateChanged(auth, (user) => {
   shopOpen = false;
   isAdmin = false;
   if (!user) {
+    document.body.classList.remove('guest');
     presenceRef = null; // 로그아웃 뒤엔 쓸 수 없음 (연결이 끊기면 서버가 지움)
     playerId = null;
     if (room) leaveLocal();
@@ -2148,13 +2193,22 @@ onAuthStateChanged(auth, (user) => {
     return;
   }
   playerId = user.uid;
+  document.body.classList.toggle('guest', !!user.isAnonymous);
+  if (user.isAnonymous) {
+    // 손님: 계정 정보가 없으므로 이 기기에서만 쓰는 프로필 (공지는 받음)
+    profileUnsubs = [onValue(ref(db, 'notice'), (s) => { notice = s.val(); maybeShowNotice(); }, () => {})];
+    profile = guestProfile();
+    profileLoaded = true;
+    showHome();
+    return;
+  }
   if (!signingUp) watchProfile(user.uid);
 });
 
 function renderHeaderUser() {
   const on = !!(profile && profile.approved);
   $('#hdr-user').classList.toggle('hidden', !on);
-  if (on) $('#hdr-user').innerHTML = `${esc(profile.nick)} · <b>${(profile.points || 0).toLocaleString()}P</b>`;
+  if (on) $('#hdr-user').innerHTML = profile.guest ? esc(profile.nick) : `${esc(profile.nick)} · <b>${(profile.points || 0).toLocaleString()}P</b>`;
   $('#hdr-admin').classList.toggle('hidden', !isAdmin);
 }
 
@@ -2251,6 +2305,7 @@ $('#nick-form').addEventListener('submit', async (e) => {
   if (!nick) { $('#nick-error').textContent = '새 닉네임을 입력해주세요.'; return; }
   if (nickLen(nick) > NICK_MAX) { $('#nick-error').textContent = `닉네임은 ${NICK_MAX}글자까지 쓸 수 있어요.`; return; }
   if (hasBad(nick)) { $('#nick-error').textContent = '닉네임에 쓸 수 없는 말이 들어 있어요. 다른 닉네임을 써 주세요.'; return; }
+  if (nick.includes('손님')) { $('#nick-error').textContent = "닉네임에 '손님'은 쓸 수 없어요."; return; }
   if (nick === profile.nick) { $('#nick-error').textContent = '지금 닉네임과 같아요.'; return; }
   const cost = nickConflict ? 0 : 300;
   if ((profile.points || 0) < cost) { $('#nick-error').textContent = '포인트가 부족해요.'; return; }
@@ -2283,6 +2338,7 @@ const PRIZE = [200, 150, 100]; // 오늘의 챔피언 1·2·3등
 const prizesFor = (n) => (n >= 4 ? [100, 50, 30] : n === 3 ? [50, 30] : n === 2 ? [30] : []);
 let claimedKey = null;
 async function claimRoundRewards() {
+  if (isGuest()) return; // 손님은 회원 전용 기능을 쓰지 않음
   if (!room || room.state !== 'results' || room.daily || !authUser) return;
   const key = `${room.code}/${room.round}`;
   if (claimedKey === key) return;
@@ -2444,6 +2500,7 @@ async function claimQuest(id) {
 // 판이 끝나면 퀘스트 진행 기록 (끝까지 참가한 판만, 한 판에 한 번)
 let questRoundKey = null;
 function recordQuestRound() {
+  if (isGuest()) return; // 손님은 회원 전용 기능을 쓰지 않음
   if (!room || room.state !== 'results' || !authUser) return;
   const key = `${room.rid || room.code}/${room.round}`;
   if (questRoundKey === key) return;
@@ -2486,6 +2543,7 @@ function prevDateKey(date) {
 }
 let dailyPayChecked = null;
 async function payDailyChampions() {
+  if (isGuest()) return; // 손님은 회원 전용 기능을 쓰지 않음
   const date = prevDateKey(todayKey());
   if (dailyPayChecked === date) return;
   dailyPayChecked = date;
@@ -2521,6 +2579,7 @@ const STALE_ROOM_MS = 2 * 3600 * 1000;
 const CLEANUP_EVERY_MS = 30 * 60 * 1000;
 let cleanupTried = false;
 async function cleanupStaleRooms() {
+  if (isGuest()) return; // 손님은 회원 전용 기능을 쓰지 않음
   if (cleanupTried) return;
   cleanupTried = true;
   try {

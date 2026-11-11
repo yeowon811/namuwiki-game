@@ -784,3 +784,13 @@ body.has-ready-bar { padding-bottom: 96px; }
 .qa-row { display: grid; gap: 6px; padding: 10px; border: 1px solid var(--color-border); border-radius: 8px; }
 .qa-row .qa-num { font-size: 12px; color: var(--color-text-tertiary); }
 .modal .form-item { margin-bottom: 10px; }
+
+/* 손님: 회원 전용 기능은 숨김 */
+.guest-card .guest-head { display: flex; flex-direction: column; gap: 2px; margin-bottom: 8px; }
+.guest-card .guest-row { display: flex; gap: 8px; }
+.guest-card .guest-row .input { flex: 1; min-width: 0; }
+.guest-only { display: none !important; }
+body.guest .guest-only { display: flex !important; }
+body.guest #btn-shop, body.guest .pf-points, body.guest #pf-stats, body.guest .pf-actions, body.guest #qa-missing,
+body.guest #nick-conflict, body.guest #daily-card, body.guest #quest-card, body.guest #btn-char, body.guest #char-picker { display: none !important; }
+.guest-note .link, #guest-note .link { background: none; border: 0; padding: 0; font: inherit; color: var(--color-primary); cursor: pointer; text-decoration: underline; }

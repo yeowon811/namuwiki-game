@@ -8,7 +8,7 @@
     "ids": {
       ".read": "auth != null",
       "$id": {
-        ".write": "auth != null && ((!data.exists() && newData.val() === auth.uid) || root.child('admins').child(auth.uid).val() === true)",
+        ".write": "auth != null && ((!data.exists() && newData.val() === auth.uid && auth.provider !== 'anonymous') || root.child('admins').child(auth.uid).val() === true)",
         ".validate": "$id.matches(/^[a-z0-9_]{4,16}$/)"
       }
     },
@@ -24,7 +24,7 @@
     "users": {
       ".read": "auth != null",
       "$uid": {
-        ".write": "auth != null && ((auth.uid === $uid && !data.exists() && newData.child('approved').val() === true && newData.child('points').val() === 0) || root.child('admins').child(auth.uid).val() === true)",
+        ".write": "auth != null && ((auth.uid === $uid && auth.provider !== 'anonymous' && !data.exists() && newData.child('approved').val() === true && newData.child('points').val() === 0) || root.child('admins').child(auth.uid).val() === true)",
         "id": {
           ".validate": "newData.isString() && newData.parent().parent().parent().child('ids').child(newData.val()).val() === $uid"
         },
@@ -147,7 +147,7 @@
     "roomIndex": {
       ".read": "auth != null",
       "$code": {
-        ".write": "auth != null && root.child('users').child(auth.uid).child('approved').val() === true",
+        ".write": "auth != null && (root.child('users').child(auth.uid).child('approved').val() === true || auth.provider === 'anonymous')",
         ".validate": "$code.matches(/^[A-Z0-9]{4}$/) && newData.child('lastActive').val() === now"
       }
     },
@@ -168,7 +168,7 @@
       ".read": "auth != null && (root.child('users').child(auth.uid).child('approved').val() === true || root.child('admins').child(auth.uid).val() === true)",
       "$code": {
         ".read": "auth != null",
-        ".write": "auth != null && root.child('users').child(auth.uid).child('approved').val() === true && (newData.exists() || data.child('hostId').val() === auth.uid || root.child('admins').child(auth.uid).val() === true || !data.child('hostId').exists() || !data.child('state').exists() || data.child('closed').exists() || root.child('roomIndex').child($code).child('lastActive').val() < now - 7200000 || (!root.child('roomIndex').child($code).exists() && data.child('createdAt').val() < now - 7200000))",
+        ".write": "auth != null && (root.child('users').child(auth.uid).child('approved').val() === true || auth.provider === 'anonymous') && (newData.exists() || data.child('hostId').val() === auth.uid || root.child('admins').child(auth.uid).val() === true || !data.child('hostId').exists() || !data.child('state').exists() || data.child('closed').exists() || root.child('roomIndex').child($code).child('lastActive').val() < now - 7200000 || (!root.child('roomIndex').child($code).exists() && data.child('createdAt').val() < now - 7200000))",
         ".validate": "$code.matches(/^[A-Z0-9]{4}$/) && newData.hasChildren(['hostId', 'state']) && (!data.exists() || data.child('players').child(auth.uid).exists() || newData.child('players').child(auth.uid).exists() || root.child('admins').child(auth.uid).val() === true)",
         "mode": {
           ".validate": "newData.val() === 'time' || newData.val() === 'clicks' || newData.val() === 'relay'"
@@ -320,7 +320,7 @@
     "lobbies": {
       ".read": "auth != null",
       "$code": {
-        ".write": "auth != null && root.child('users').child(auth.uid).child('approved').val() === true",
+        ".write": "auth != null && (root.child('users').child(auth.uid).child('approved').val() === true || auth.provider === 'anonymous')",
         ".validate": "$code.matches(/^[A-Z0-9]{4}$/)",
         "name": {
           ".validate": "newData.isString() && newData.val().length <= 16"
