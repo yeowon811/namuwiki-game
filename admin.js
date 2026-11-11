@@ -34,6 +34,7 @@ onAuthStateChanged(auth, async (user) => {
   if (!isAdmin) return gate('관리자만 볼 수 있는 페이지예요.');
   adminUid = user.uid;
   const me = (await get(ref(db, `users/${user.uid}`))).val();
+  if (me?.pwSet !== true) return gate('관리자 계정은 비밀번호가 꼭 있어야 해요. <a class="link" href="./">게임 페이지</a>에서 비밀번호를 먼저 만들어 주세요.');
   $('#hdr-user').textContent = me ? `${me.nick} (@${me.id})` : '';
   $('#adm-gate').classList.add('hidden');
   $('#adm-main').classList.remove('hidden');
@@ -68,7 +69,7 @@ function fmtAgo(t) {
   const d = Math.floor(h / 24);
   return d < 7 ? `${d}일 전` : fmtDate(t);
 }
-const whereText = (c) => (c.daily ? '오늘의 챔피언' : WHERE[c.where] || c.where) + (c.room && !c.daily ? ` <span class="text-tertiary">· 방 ${esc(c.room)}</span>` : '');
+const whereText = (c) => (c.daily ? '오늘의 챔피언' : WHERE[c.where] || esc(c.where)) + (c.room && !c.daily ? ` <span class="text-tertiary">· 방 ${esc(c.room)}</span>` : '');
 function renderOnline(all) {
   const on = all.filter((u) => isOnline(u.uid))
     .map((u) => ({ ...u, conns: connsOf(u.uid).sort((a, b) => (b.at || 0) - (a.at || 0)) }))
@@ -104,7 +105,7 @@ function render() {
     ? members.map((u) => {
       const st = u.stats || {};
       const seen = isOnline(u.uid) ? '<span class="on-dot"></span>접속 중' : `<span class="text-tertiary">${fmtAgo(presence[u.uid]?.lastSeen)}</span>`;
-      return `<tr class="${picked.has(u.uid) ? 'picked' : ''}"><td class="pick"><input type="checkbox" data-pick="${u.uid}" ${picked.has(u.uid) ? 'checked' : ''} aria-label="${esc(u.nick)} 선택"></td><td class="nick">${esc(u.nick)}${u.approved ? '' : ' <span class="tag tag-error">정지</span>'}</td><td>@${esc(u.id)}</td><td>${esc(u.name)}</td>`
+      return `<tr class="${picked.has(u.uid) ? 'picked' : ''}"><td class="pick"><input type="checkbox" data-pick="${u.uid}" ${picked.has(u.uid) ? 'checked' : ''} aria-label="${esc(u.nick)} 선택"></td><td class="nick">${esc(u.nick)}${u.approved ? '' : ' <span class="tag tag-error">정지</span>'}${u.pwSet === true ? '' : ' <span class="tag tag-warning" title="아직 비밀번호를 만들지 않아서 아이디만 알면 누구나 로그인할 수 있어요">비밀번호 없음</span>'}</td><td>@${esc(u.id)}</td><td>${esc(u.name)}</td>`
         + `<td class="seen">${seen}</td>`
         + `<td class="num">${(u.points || 0).toLocaleString()}</td><td class="num">${st.games || 0}</td>`
         + `<td class="num">${st.win1 || 0}/${st.win2 || 0}/${st.win3 || 0}</td><td class="num">${st.daily1 || 0}</td>`

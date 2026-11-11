@@ -71,6 +71,11 @@
               <label for="login-id" class="form-label">아이디</label>
               <input id="login-id" class="input input-lg" maxlength="16" autocomplete="username" autocapitalize="off" spellcheck="false" />
             </div>
+            <div class="form-item">
+              <label for="login-pw" class="form-label">비밀번호</label>
+              <input id="login-pw" class="input input-lg" type="password" maxlength="64" autocomplete="current-password" />
+              <p class="form-extra">비밀번호를 아직 만들지 않은 예전 계정은 비워 두고 로그인하면 비밀번호를 만드는 화면이 나와요.</p>
+            </div>
             <button class="btn btn-primary btn-lg btn-block" type="submit">로그인</button>
           </form>
           <form id="signup-form" class="auth-form hidden" autocomplete="on">
@@ -87,7 +92,16 @@
             <div class="form-item">
               <label for="su-id" class="form-label">아이디</label>
               <input id="su-id" class="input input-lg" maxlength="16" autocomplete="username" autocapitalize="off" spellcheck="false" />
-              <p class="form-extra">영어 소문자, 숫자, _ 로 4~16자. 로그인할 때 이 아이디만 입력해요.</p>
+              <p class="form-extra">영어 소문자, 숫자, _ 로 4~16자.</p>
+            </div>
+            <div class="form-item">
+              <label for="su-pw" class="form-label">비밀번호</label>
+              <input id="su-pw" class="input input-lg" type="password" maxlength="64" autocomplete="new-password" />
+              <p class="form-extra">6자 이상. 잊어버리면 찾을 수 없으니 꼭 기억해 두세요.</p>
+            </div>
+            <div class="form-item">
+              <label for="su-pw2" class="form-label">비밀번호 확인</label>
+              <input id="su-pw2" class="input input-lg" type="password" maxlength="64" autocomplete="new-password" />
             </div>
             <button class="btn btn-primary btn-lg btn-block" type="submit">가입하기</button>
           </form>
@@ -103,6 +117,33 @@
         <h1 class="result-title">이용이 정지됐어요</h1>
         <p class="result-sub" id="pending-who"></p>
         <p class="text-secondary">관리자가 이 계정의 이용을 정지했어요. 정지가 풀리면 이 화면이 자동으로 바뀌어요.</p>
+      </div>
+      <button class="btn btn-text btn-logout"><svg class="ic"><use href="#i-logout"/></svg>로그아웃</button>
+    </section>
+
+    <!-- 비밀번호 만들기: 예전에 아이디만으로 가입한 계정은 처음 한 번 비밀번호를 만들어야 함 -->
+    <section id="screen-setpw" class="screen hidden">
+      <div class="page-title">
+        <h1>비밀번호를 만들어 주세요</h1>
+        <p class="text-secondary">보안을 위해 이제 로그인할 때 비밀번호가 필요해요. 지금 만든 비밀번호로 다음부터 로그인해요.</p>
+      </div>
+      <div class="card">
+        <div class="card-body">
+          <form id="setpw-form" class="auth-form" autocomplete="on">
+            <input type="text" id="setpw-user" autocomplete="username" hidden />
+            <div class="form-item">
+              <label for="setpw-pw" class="form-label">새 비밀번호</label>
+              <input id="setpw-pw" class="input input-lg" type="password" maxlength="64" autocomplete="new-password" />
+              <p class="form-extra">6자 이상. 잊어버리면 찾을 수 없으니 꼭 기억해 두세요.</p>
+            </div>
+            <div class="form-item">
+              <label for="setpw-pw2" class="form-label">비밀번호 확인</label>
+              <input id="setpw-pw2" class="input input-lg" type="password" maxlength="64" autocomplete="new-password" />
+            </div>
+            <button class="btn btn-primary btn-lg btn-block" type="submit">비밀번호 만들기</button>
+          </form>
+          <p id="setpw-error" class="form-error"></p>
+        </div>
       </div>
       <button class="btn btn-text btn-logout"><svg class="ic"><use href="#i-logout"/></svg>로그아웃</button>
     </section>
@@ -513,6 +554,6 @@
   <div id="toast" class="message" role="status"></div>
 
   <!-- 코드를 바꾸면 ?v= 숫자를 올려서 브라우저 캐시에 남은 옛 파일을 쓰지 않게 함 -->
-  <script type="module" src="app.js?v=71"></script>
+  <script type="module" src="app.js?v=72"></script>
 </body>
 </html>

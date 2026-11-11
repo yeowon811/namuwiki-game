@@ -207,7 +207,9 @@
     const s = Math.max(0, Math.floor(ms / 1000));
     return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
   };
-  const fmtP = (ms) => (ms == null ? '-' : `${fmt(ms)}.${Math.floor((ms % 1000) / 100)}`);
+  // 게임 페이지가 보내 준 숫자 (방 데이터는 참가자가 직접 쓰므로 숫자가 아니면 0으로)
+  const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+  const fmtP = (ms) => (typeof ms !== 'number' || !Number.isFinite(ms) ? '-' : `${fmt(ms)}.${Math.floor((ms % 1000) / 100)}`);
 
   function ensureHud() {
     if (host) return;
@@ -503,13 +505,13 @@
         rk = rank;
         rkCls = rank <= 3 ? 'r' + rank : '';
         cls += ' fin';
-        s = (board.mode === 'clicks' ? `${p.clicks}클릭 · ${fmtP(p.elapsed)}` : `${fmtP(p.elapsed)} · ${p.clicks}클릭`) + (p.hints ? ' 💡' : '');
+        s = (board.mode === 'clicks' ? `${num(p.clicks)}클릭 · ${fmtP(p.elapsed)}` : `${fmtP(p.elapsed)} · ${num(p.clicks)}클릭`) + (p.hints ? ' 💡' : '');
       } else if (p.status === 'gaveup') {
         cls += ' out';
         s = p.dq ? '실격' : '포기';
       } else {
-        const leg2 = board.mode === 'relay' ? `${p.leg || 0}/${board.total}` : '';
-        s = [leg2, p.clicks != null ? `${p.clicks}클릭째` : ''].filter(Boolean).join(' · ') || '출발';
+        const leg2 = board.mode === 'relay' ? `${num(p.leg)}/${num(board.total)}` : '';
+        s = [leg2, p.clicks != null ? `${num(p.clicks)}클릭째` : ''].filter(Boolean).join(' · ') || '출발';
       }
       const dots = board.mode === 'relay' && board.total > 1 && p.status !== 'waiting' ? legDots(p, board.total) : '';
       return `<li class="${cls}"><span class="rk ${rkCls}">${rk}</span><span class="n">${dots}${esc(p.name)}${p.me ? ' (나)' : ''}</span><span class="s">${s}</span></li>`;
@@ -589,13 +591,13 @@
     const players = board?.players || [];
     const winner = players.find((p) => p.status === 'finished');
     const mine = players.find((p) => p.me);
-    const score = (p) => (board.mode === 'clicks' ? `${p.clicks}클릭 · ${fmtP(p.elapsed)}` : `${fmtP(p.elapsed)} · ${p.clicks}클릭`);
+    const score = (p) => (board.mode === 'clicks' ? `${num(p.clicks)}클릭 · ${fmtP(p.elapsed)}` : `${fmtP(p.elapsed)} · ${num(p.clicks)}클릭`);
     let w, sub;
     if (!winner) { w = '도착한 사람이 없어요'; sub = ''; }
     else if (winner.me) { w = '축하해요! <b>1등</b>이에요 🎉'; sub = score(winner); }
     else {
       w = `1등 <b>${esc(winner.name)}</b>`;
-      sub = score(winner) + (board.mode === 'relay' && mine && mine.status !== 'finished' ? ` · 나는 ${mine.leg || 0}/${board.total}단계` : '');
+      sub = score(winner) + (board.mode === 'relay' && mine && mine.status !== 'finished' ? ` · 나는 ${num(mine.leg)}/${num(board.total)}단계` : '');
     }
     root.querySelector('.ew').innerHTML = w;
     root.querySelector('.es').textContent = (sub ? sub + ' · ' : '') + '게임 탭에서 결과를 확인하세요.';

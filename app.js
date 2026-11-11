@@ -1,6 +1,7 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import {
   getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut,
+  updatePassword, reauthenticateWithCredential, EmailAuthProvider,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import {
   getDatabase, ref, get, set, update, remove, push, onValue, onDisconnect, serverTimestamp, runTransaction,
@@ -265,6 +266,32 @@ if (inviteCode) {
   $('#btn-invite').classList.remove('hidden');
 }
 
+// ---------- 받은 데이터 정리 (보안) ----------
+// 방 데이터는 참가자가 직접 쓰므로, 숫자여야 하는 칸에 글자(화면을 조작하는 코드 등)가 들어 있으면 버림
+const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
+const PLAYER_NUMS = ['clicks', 'hints', 'violations', 'returns', 'away', 'leg', 'elapsed', 'joinedAt', 'offlineSince', 'jumpAt'];
+const PLAYER_BOOLS = ['dq', 'auto', 'online', 'ready'];
+const PLAYER_STATUS = ['waiting', 'playing', 'finished', 'gaveup'];
+function cleanPlayer(id, p) {
+  const o = { ...p, id, name: String(p.name ?? '') };
+  for (const k of PLAYER_NUMS) if (k in o && !isNum(o[k])) delete o[k];
+  for (const k of PLAYER_BOOLS) if (k in o && typeof o[k] !== 'boolean') delete o[k];
+  if ('status' in o && !PLAYER_STATUS.includes(o.status)) o.status = 'waiting';
+  if ('legTimes' in o) o.legTimes = Array.isArray(o.legTimes) ? o.legTimes.filter(isNum) : [];
+  if ('path' in o) o.path = Array.isArray(o.path) ? o.path.map((t) => String(t ?? '')) : [];
+  if ('steps' in o) o.steps = Array.isArray(o.steps) ? o.steps.filter((s) => s && typeof s === 'object').map((s) => ({ ...s, title: String(s.title ?? '') })) : [];
+  return o;
+}
+const ROOM_NUMS = ['round', 'startAt', 'endedAt', 'createdAt', 'winners', 'legs', 'timeLimitMin'];
+function cleanRoom(v) {
+  const o = { ...v };
+  for (const k of ROOM_NUMS) if (k in o && !isNum(o[k])) delete o[k];
+  if (isNum(o.winners)) o.winners = Math.min(3, Math.max(1, Math.round(o.winners)));
+  for (const k of ['start', 'target']) if (k in o) o[k] = String(o[k] ?? '');
+  if ('targets' in o) o.targets = Array.isArray(o.targets) ? o.targets.map((t) => String(t ?? '')) : null;
+  return o;
+}
+
 // ---------- 유틸 ----------
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const namuUrl = (t) => 'https://namu.wiki/w/' + encodeURIComponent(t);
@@ -430,9 +457,9 @@ function enterRoom(code) {
     const prevPhase = phase();
     room = {
       code,
-      ...v,
+      ...cleanRoom(v),
       // 이름이 없는 항목은 내보낸 사람의 연결 끊김 기록이 남은 것이므로 무시
-      players: Object.entries(v.players || {}).filter(([, p]) => p?.name).map(([id, p]) => ({ id, ...p })),
+      players: Object.entries(v.players || {}).filter(([, p]) => p?.name).map(([id, p]) => cleanPlayer(id, p)),
     };
     room.ghosts = Object.entries(v.players || {}).filter(([id, p]) => !p?.name || v.kicked?.[id]).map(([id]) => id);
     if (prevPhase === 'countdown' && phase() === 'playing') toast('출발! 링크만 타고 목표 문서까지 가세요.', 'success');
@@ -1680,8 +1707,10 @@ const auth = getAuth(firebaseApp);
 const ID_RE = /^[a-z0-9_]{4,16}$/;
 const EMAIL_DOMAIN = 'namurace.app'; // 아이디를 Firebase 로그인용 이메일로 바꿀 때 쓰는 가짜 도메인
 const idToEmail = (id) => `${id}@${EMAIL_DOMAIN}`;
-// 비밀번호 없이 아이디만으로 로그인: Firebase 로그인에 필요한 비밀번호는 아이디로 자동으로 만듦
+// 예전 방식(아이디만으로 로그인)의 자동 비밀번호. 비밀번호를 아직 만들지 않은 예전 계정이 한 번 들어와서
+// 새 비밀번호를 만들 때만 씀 (users/<uid>/pwSet이 true가 되면 이 비밀번호는 더 이상 맞지 않음)
 const idToPassword = (id) => `namurace-${id}-login`;
+const PW_MIN = 6;
 let authUser = null;
 let profile = null; // users/<uid>
 let isAdmin = false;
@@ -1692,7 +1721,8 @@ let profileLoaded = false; // users/<uid>를 한 번이라도 받았는지
 function authMessage(e) {
   const code = e?.code || '';
   if (/email-already-in-use/.test(code)) return '이미 사용 중인 아이디예요.';
-  if (/invalid-credential|wrong-password|user-not-found|invalid-email/.test(code)) return '가입되지 않은 아이디예요. (예전에 비밀번호로 가입한 계정은 다시 가입해야 해요)';
+  if (/invalid-credential|wrong-password|user-not-found|invalid-email|missing-password/.test(code)) return '아이디 또는 비밀번호가 맞지 않아요.';
+  if (/requires-recent-login/.test(code)) return '다시 로그인한 뒤에 해주세요.';
   if (/weak-password/.test(code)) return '비밀번호는 6자 이상이어야 해요.';
   if (/too-many-requests/.test(code)) return '시도가 너무 많아요. 잠시 후 다시 해주세요.';
   if (/operation-not-allowed|configuration-not-found/.test(code)) return 'Firebase에서 이메일/비밀번호 로그인이 꺼져 있어요. 관리자에게 알려주세요.';
@@ -1720,8 +1750,52 @@ async function authGuard(form, fn) {
 $('#login-form').addEventListener('submit', (e) => {
   e.preventDefault();
   const id = $('#login-id').value.trim().toLowerCase();
+  const pw = $('#login-pw').value;
   if (!ID_RE.test(id)) { $('#auth-error').textContent = '아이디를 확인해주세요. (영어 소문자, 숫자, _ 로 4~16자)'; return; }
-  authGuard(e.currentTarget, () => signInWithEmailAndPassword(auth, idToEmail(id), idToPassword(id)));
+  authGuard(e.currentTarget, async () => {
+    try {
+      if (!pw) throw Object.assign(new Error('no password'), { code: 'auth/missing-password' });
+      await signInWithEmailAndPassword(auth, idToEmail(id), pw);
+    } catch (err) {
+      // 비밀번호를 아직 만들지 않은 예전 계정: 예전 방식으로 들어온 뒤 '비밀번호 만들기' 화면으로
+      if (!/invalid-credential|wrong-password|missing-password|invalid-login/.test(err?.code || '')) throw err;
+      try { await signInWithEmailAndPassword(auth, idToEmail(id), idToPassword(id)); } catch { throw err; }
+    }
+    $('#login-pw').value = '';
+  });
+});
+
+// 비밀번호 만들기 (예전 계정)
+$('#setpw-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const pw = $('#setpw-pw').value;
+  const errEl = $('#setpw-error');
+  errEl.textContent = '';
+  if (pw.length < PW_MIN) { errEl.textContent = `비밀번호는 ${PW_MIN}자 이상이어야 해요.`; return; }
+  if (pw !== $('#setpw-pw2').value) { errEl.textContent = '비밀번호 확인이 다르게 입력됐어요.'; return; }
+  const user = auth.currentUser;
+  if (!user || !profile) return;
+  if (pw === profile.id || pw === idToPassword(profile.id)) { errEl.textContent = '아이디와 다른 비밀번호를 써 주세요.'; return; }
+  const btn = e.currentTarget.querySelector('button[type="submit"]');
+  btn.disabled = true;
+  try {
+    try {
+      await updatePassword(user, pw);
+    } catch (err) {
+      // 오래전에 로그인한 상태면 예전 방식으로 한 번 더 확인한 뒤 바꿈
+      if (!/requires-recent-login/.test(err?.code || '')) throw err;
+      await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, idToPassword(profile.id)));
+      await updatePassword(user, pw);
+    }
+    await update(ref(db, `users/${user.uid}`), { pwSet: true });
+    $('#setpw-pw').value = ''; $('#setpw-pw2').value = '';
+    toast('비밀번호를 만들었어요. 다음부터 아이디와 비밀번호로 로그인해요.', 'success');
+  } catch (err) {
+    console.warn('[비밀번호]', err);
+    errEl.textContent = authMessage(err);
+  } finally {
+    btn.disabled = false;
+  }
 });
 
 $('#signup-form').addEventListener('submit', (e) => {
@@ -1734,17 +1808,23 @@ $('#signup-form').addEventListener('submit', (e) => {
   if (!nick) return err('닉네임을 입력해주세요.');
   if (nickLen(nick) > NICK_MAX) return err(`닉네임은 ${NICK_MAX}글자까지 쓸 수 있어요.`);
   if (!ID_RE.test(id)) return err('아이디는 영어 소문자, 숫자, _ 로 4~16자예요.');
+  const pw = $('#su-pw').value;
+  if (pw.length < PW_MIN) return err(`비밀번호는 ${PW_MIN}자 이상이어야 해요.`);
+  if (pw !== $('#su-pw2').value) return err('비밀번호 확인이 다르게 입력됐어요.');
+  if (pw === id) return err('아이디와 다른 비밀번호를 써 주세요.');
   authGuard(e.currentTarget, async () => {
-    if (await nickOwner(nick)) throw new Error('이미 다른 사람이 쓰는 닉네임이에요. 다른 닉네임을 골라 주세요.');
     signingUp = true;
-    const cred = await createUserWithEmailAndPassword(auth, idToEmail(id), idToPassword(id));
+    // 닉네임 중복은 계정을 만든 뒤 확인 (닉네임 목록은 로그인해야 읽을 수 있음). 겹치면 만든 계정을 지움
+    let cred;
+    try { cred = await createUserWithEmailAndPassword(auth, idToEmail(id), pw); } catch (ce) { signingUp = false; throw ce; }
+    $('#su-pw').value = ''; $('#su-pw2').value = '';
     const uid = cred.user.uid;
     try {
       if (await nickTakenBy(nick, uid)) throw new Error('이미 다른 사람이 쓰는 닉네임이에요. 다른 닉네임을 골라 주세요.');
       await update(ref(db), {
         [`ids/${id}`]: uid,
         [`users/${uid}`]: {
-          id, nick, approved: true, points: 0, createdAt: serverTimestamp(),
+          id, nick, approved: true, points: 0, createdAt: serverTimestamp(), pwSet: true,
           stats: { games: 0, win1: 0, win2: 0, win3: 0, daily1: 0 },
         },
         [`private/${uid}`]: { name },
@@ -1938,6 +2018,11 @@ function showHome() {
     $('#pending-who').textContent = `${profile.nick} (@${profile.id})`;
     return show('pending');
   }
+  // 예전에 아이디만으로 가입한 계정: 비밀번호를 만들어야 게임을 할 수 있음
+  if (profile.pwSet !== true) {
+    $('#setpw-user').value = profile.id || '';
+    return show('setpw');
+  }
   syncPresence();
   if (shopOpen) { show('shop'); renderShop(); return; }
   show('home');
@@ -2049,12 +2134,16 @@ async function claimRoundRewards() {
       updates[`users/${authUser.uid}/stats/games`] = (prof.stats?.games || 0) + 1;
     }
     const amt = rank >= 1 ? prizesFor(participants)[rank - 1] || 0 : 0;
-    if (amt) {
+    // 승리 보상은 하루 WIN_CAP번까지 (database.rules.json의 lastWin 규칙과 같아야 함)
+    const qday = questDay();
+    const winN = prof.lastWin?.day === qday ? (prof.lastWin.n || 0) + 1 : 1;
+    if (amt && winN > WIN_CAP) toast(`오늘 받을 수 있는 순위 보상(${WIN_CAP}번)을 모두 받았어요. 내일 다시 받을 수 있어요.`, 'info');
+    if (amt && winN <= WIN_CAP) {
       const rid = room.rid || code; // 예전 방은 고유 번호가 없어서 코드로
       const claimed = (await get(ref(db, `claims/${rid}/${authUser.uid}`))).val();
       if (!(typeof claimed === 'number' && claimed >= round)) {
         updates[`users/${authUser.uid}/points`] = (prof.points || 0) + amt;
-        updates[`users/${authUser.uid}/lastWin`] = { code, rid, round, amt };
+        updates[`users/${authUser.uid}/lastWin`] = { code, rid, round, amt, day: qday, n: winN };
         updates[`users/${authUser.uid}/stats/win${rank}`] = (prof.stats?.[`win${rank}`] || 0) + 1;
         updates[`claims/${rid}/${authUser.uid}`] = round;
       }
@@ -2101,7 +2190,8 @@ const QUEST_STAR3 = [
 // ★ 7개 중 2개 (21가지)
 const QUEST_PAIRS = [[0, 1], [0, 2], [0, 3], [0, 4], [0, 5], [0, 6], [1, 2], [1, 3], [1, 4], [1, 5], [1, 6], [2, 3], [2, 4], [2, 5], [2, 6], [3, 4], [3, 5], [3, 6], [4, 5], [4, 6], [5, 6]];
 const QUEST_FAST = { fast5: 5 * 60000, fast3: 3 * 60000, fast2: 2 * 60000 }; // 도착 시간 퀘스트 기준 (기록 = 힌트 페널티 포함)
-const QUEST_WIN_MIN = 3; // 1등 퀘스트는 이 인원 이상인 방에서만
+const QUEST_WIN_MIN = 3;
+const WIN_CAP = 20; // 순위 보상(1~3등 포인트)은 하루 20번까지 // 1등 퀘스트는 이 인원 이상인 방에서만
 const questDay = () => Math.floor((now() + 9 * 3600000) / 86400000); // 한국 시간 기준 날짜 번호
 // ★ 짝은 날짜 % 21, ★★는 날짜 % 4, ★★★는 (날짜 / 4의 몫 + 날짜) % 4 → 매일 모두 바뀌고 ★★·★★★는 16일마다 모든 조합
 function todaysQuests(day = questDay()) {
