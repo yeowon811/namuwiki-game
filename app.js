@@ -1729,7 +1729,7 @@ const GUEST_LIMIT_MS = 60 * 60 * 1000;
 const GUEST_WARN_MS = 5 * 60 * 1000;
 const GUEST_START_KEY = 'nr.guestStart';
 // 연결이 끊긴 손님은 방장이 방에서 지움 (창을 닫은 손님의 캐릭터가 남지 않게). 새로고침은 금방 다시 연결되니 여유를 둠
-const GUEST_GONE_MS = 20 * 1000;
+const GUEST_GONE_MS = 5 * 1000;
 const GUEST_GONE_PLAYING_MS = 60 * 1000;
 const guestStart = () => Number(store.get(GUEST_START_KEY, ss)) || Date.now();
 const guestLeftMs = () => guestStart() + GUEST_LIMIT_MS - Date.now();
@@ -1761,10 +1761,24 @@ async function checkGuestTime() {
 }
 setInterval(checkGuestTime, 15000);
 // 방장: 창을 닫고 나간 손님 정리
+let guestCleanupTimer = null;
+let guestCleanupAt = 0;
 function cleanupGoneGuests() {
   if (!room || !isHost()) return;
   const limit = room.state === 'playing' ? GUEST_GONE_PLAYING_MS : GUEST_GONE_MS;
-  const gone = room.players.filter((p) => p.guest && p.id !== playerId && !p.online && p.offlineSince && now() - p.offlineSince > limit);
+  const off = room.players.filter((p) => p.guest && p.id !== playerId && !p.online && p.offlineSince);
+  const gone = off.filter((p) => now() - p.offlineSince > limit);
+  // 아직 시간이 안 된 손님은 시간이 되자마자 다시 확인 (5초마다 도는 정리를 기다리지 않음)
+  const wait = off.filter((p) => !gone.includes(p)).map((p) => p.offlineSince + limit - now());
+  if (wait.length) {
+    const at = Date.now() + Math.max(200, Math.min(...wait) + 200);
+    // 더 빨리 확인해야 하는 손님이 생기면 타이머를 앞당김
+    if (!guestCleanupTimer || at < guestCleanupAt - 100) {
+      clearTimeout(guestCleanupTimer);
+      guestCleanupAt = at;
+      guestCleanupTimer = setTimeout(() => { guestCleanupTimer = null; cleanupGoneGuests(); }, at - Date.now());
+    }
+  }
   if (!gone.length) return;
   const fix = {};
   for (const p of gone) fix[`players/${p.id}`] = null;
