@@ -7,6 +7,7 @@ import {
   getDatabase, ref, get, set, update, remove, push, onValue, onDisconnect, serverTimestamp, runTransaction,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
 import { firebaseConfig } from './firebase-config.js';
+import { QUESTIONS, CUSTOM, checkQA, makeRecovery, relock, unlockKeys, recoverPassword } from './recovery.js?v=1';
 import KEYWORDS from './keywords.js';
 import {
   ANIMALS, ACCESSORIES, SLOTS, ANIMAL_PRICE, ACC_PRICE,
@@ -1723,6 +1724,9 @@ function authMessage(e) {
   if (/email-already-in-use/.test(code)) return '이미 사용 중인 아이디예요.';
   if (/invalid-credential|wrong-password|user-not-found|invalid-email|missing-password/.test(code)) return '아이디 또는 비밀번호가 맞지 않아요.';
   if (/requires-recent-login/.test(code)) return '다시 로그인한 뒤에 해주세요.';
+  if (code === 'recover/wrong') return '아이디, 질문, 답 중에 맞지 않는 것이 있어요.';
+  if (code === 'recover/qa' || code === 'recover/no-slot') return e.message;
+  if (code === 'recover/bad-keys' || code === 'recover/no-keys') return '비밀번호 찾기 정보를 열지 못했어요. 찾기 질문을 다시 만들어 주세요.';
   if (/weak-password/.test(code)) return '비밀번호는 6자 이상이어야 해요.';
   if (/too-many-requests/.test(code)) return '시도가 너무 많아요. 잠시 후 다시 해주세요.';
   if (/operation-not-allowed|configuration-not-found/.test(code)) return 'Firebase에서 이메일/비밀번호 로그인이 꺼져 있어요. 관리자에게 알려주세요.';
@@ -1736,6 +1740,7 @@ $$('#auth-tabs button').forEach((b) => (b.onclick = () => {
   $$('#auth-tabs button').forEach((x) => x.classList.toggle('active', x === b));
   $('#login-form').classList.toggle('hidden', b.dataset.tab !== 'login');
   $('#signup-form').classList.toggle('hidden', b.dataset.tab !== 'signup');
+  $('#recover-form').classList.add('hidden');
   $('#auth-error').textContent = '';
 }));
 
@@ -1765,6 +1770,144 @@ $('#login-form').addEventListener('submit', (e) => {
   });
 });
 
+// ---------- 비밀번호 찾기 질문 (recovery.js) ----------
+const QA_OPTS = '<option value="">질문 고르기</option>'
+  + QUESTIONS.map((q) => `<option value="${q.id}">${esc(q.q)}</option>`).join('')
+  + `<option value="${CUSTOM}">직접 질문 쓰기</option>`;
+function mountQA(box) {
+  box.innerHTML = [1, 2].map((n) => `<div class="qa-row"><span class="qa-num">질문 ${n}</span>`
+    + `<select class="input select qa-q" aria-label="질문 ${n}">${QA_OPTS}</select>`
+    + `<input class="input qa-custom hidden" maxlength="40" placeholder="질문을 직접 써 주세요 (예: 우리 집 와이파이 이름 앞 4자리는?)" aria-label="직접 쓴 질문 ${n}">`
+    + `<input class="input qa-a" maxlength="40" placeholder="답" autocomplete="off" aria-label="답 ${n}"></div>`).join('');
+  box.querySelectorAll('.qa-q').forEach((sel) => sel.addEventListener('change', () => {
+    sel.parentElement.querySelector('.qa-custom').classList.toggle('hidden', sel.value !== CUSTOM);
+  }));
+}
+const readQA = (box) => [...box.querySelectorAll('.qa-row')].map((r) => ({
+  qid: r.querySelector('.qa-q').value, custom: r.querySelector('.qa-custom').value, answer: r.querySelector('.qa-a').value,
+}));
+function clearQA(box) {
+  box.querySelectorAll('.qa-row').forEach((r) => {
+    r.querySelector('.qa-q').value = '';
+    r.querySelector('.qa-custom').value = '';
+    r.querySelector('.qa-custom').classList.add('hidden');
+    r.querySelector('.qa-a').value = '';
+  });
+}
+['#su-qa', '#setpw-qa', '#rc-qa', '#dlg-qa'].forEach((s) => mountQA($(s)));
+// 찾기 질문 저장 (본 계정으로 로그인한 상태에서): 처음 만들기 또는 바꾸기
+async function saveRecovery(password, qa, extra = {}) {
+  const uid = authUser.uid;
+  let oldRcv = null;
+  if (profile?.rcv) {
+    const box = (await get(ref(db, `keys/${uid}`))).val();
+    oldRcv = box ? await unlockKeys(uid, password, box).catch(() => null) : null;
+  }
+  const updates = await makeRecovery({ uid, id: profile.id, domain: EMAIL_DOMAIN, password, qa, oldRcv });
+  await update(ref(db), { ...updates, ...extra });
+}
+
+// 비밀번호 찾기 화면
+const showAuthForm = (name) => {
+  ['login', 'signup', 'recover'].forEach((n) => $(`#${n}-form`).classList.toggle('hidden', n !== name));
+  $('#auth-tabs').classList.toggle('hidden', name === 'recover');
+  $('#auth-error').textContent = '';
+};
+$('#btn-forgot').onclick = () => { $('#rc-id').value = $('#login-id').value.trim().toLowerCase(); showAuthForm('recover'); };
+$('#btn-forgot-back').onclick = () => showAuthForm('login');
+$('#recover-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const id = $('#rc-id').value.trim().toLowerCase();
+  const qa = readQA($('#rc-qa'));
+  const pw = $('#rc-pw').value;
+  const err = (m) => { $('#auth-error').textContent = m; };
+  if (!ID_RE.test(id)) return err('아이디를 확인해주세요. (영어 소문자, 숫자, _ 로 4~16자)');
+  const qaErr = checkQA(qa);
+  if (qaErr) return err(qaErr);
+  if (pw.length < PW_MIN) return err(`새 비밀번호는 ${PW_MIN}자 이상이어야 해요.`);
+  if (pw !== $('#rc-pw2').value) return err('새 비밀번호 확인이 다르게 입력됐어요.');
+  if (pw === id) return err('아이디와 다른 비밀번호를 써 주세요.');
+  authGuard(e.currentTarget, async () => {
+    const found = await recoverPassword({ id, domain: EMAIL_DOMAIN, qa });
+    const cred = await signInWithEmailAndPassword(auth, idToEmail(id), found.password);
+    await updatePassword(cred.user, pw);
+    await update(ref(db), { ...(await relock({ uid: found.uid, password: pw, keysObj: found.keysObj })), [`users/${found.uid}/pwSet`]: true });
+    $('#rc-pw').value = ''; $('#rc-pw2').value = ''; clearQA($('#rc-qa'));
+    showAuthForm('login');
+    toast('비밀번호를 바꿨어요. 다음부터 새 비밀번호로 로그인해요.', 'success');
+  });
+});
+
+// 프로필: 비밀번호 바꾸기 / 찾기 질문 바꾸기
+$$('.dlg-cancel').forEach((b) => (b.onclick = () => b.closest('dialog').close()));
+$('#btn-pw').onclick = () => {
+  ['#pw-cur', '#pw-new', '#pw-new2'].forEach((s) => { $(s).value = ''; });
+  $('#pw-dialog .pw-user').value = profile?.id || '';
+  $('#pw-error').textContent = '';
+  $('#pw-dialog').showModal();
+  $('#pw-cur').focus();
+};
+$('#pw-form').addEventListener('submit', async (e) => {
+  if (e.submitter?.value !== 'ok') return;
+  e.preventDefault();
+  const cur = $('#pw-cur').value;
+  const pw = $('#pw-new').value;
+  const errEl = $('#pw-error');
+  errEl.textContent = '';
+  if (!cur) { errEl.textContent = '지금 비밀번호를 입력해 주세요.'; return; }
+  if (pw.length < PW_MIN) { errEl.textContent = `새 비밀번호는 ${PW_MIN}자 이상이어야 해요.`; return; }
+  if (pw !== $('#pw-new2').value) { errEl.textContent = '새 비밀번호 확인이 다르게 입력됐어요.'; return; }
+  if (pw === profile.id) { errEl.textContent = '아이디와 다른 비밀번호를 써 주세요.'; return; }
+  const btn = e.submitter;
+  btn.disabled = true;
+  try {
+    const user = auth.currentUser;
+    await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, cur));
+    // 찾기 정보가 있으면 새 비밀번호로 다시 잠금 (먼저 열어 봄: 못 열면 비밀번호를 바꾸지 않음)
+    let keysObj = null;
+    if (profile.rcv) {
+      const box = (await get(ref(db, `keys/${user.uid}`))).val();
+      keysObj = box ? await unlockKeys(user.uid, cur, box).catch(() => null) : null;
+    }
+    await updatePassword(user, pw);
+    if (keysObj) await update(ref(db), await relock({ uid: user.uid, password: pw, keysObj }));
+    $('#pw-dialog').close();
+    toast(profile.rcv && !keysObj ? '비밀번호를 바꿨어요. 비밀번호 찾기 질문은 다시 만들어 주세요.' : '비밀번호를 바꿨어요.', profile.rcv && !keysObj ? 'warning' : 'success');
+  } catch (err) {
+    errEl.textContent = /invalid-credential|wrong-password/.test(err?.code || '') ? '지금 비밀번호가 맞지 않아요.' : authMessage(err);
+  } finally {
+    btn.disabled = false;
+  }
+});
+$('#btn-qa').onclick = () => {
+  clearQA($('#dlg-qa'));
+  $('#qa-cur').value = '';
+  $('#qa-error').textContent = '';
+  $('#qa-dialog').showModal();
+};
+$('#qa-form').addEventListener('submit', async (e) => {
+  if (e.submitter?.value !== 'ok') return;
+  e.preventDefault();
+  const qa = readQA($('#dlg-qa'));
+  const cur = $('#qa-cur').value;
+  const errEl = $('#qa-error');
+  errEl.textContent = checkQA(qa) || (cur ? '' : '지금 비밀번호를 입력해 주세요.');
+  if (errEl.textContent) return;
+  const btn = e.submitter;
+  btn.disabled = true;
+  try {
+    const user = auth.currentUser;
+    await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, cur));
+    await saveRecovery(cur, qa);
+    $('#qa-dialog').close();
+    toast('비밀번호 찾기 질문을 저장했어요.', 'success');
+  } catch (err) {
+    errEl.textContent = /invalid-credential|wrong-password/.test(err?.code || '') ? '지금 비밀번호가 맞지 않아요.' : authMessage(err);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 // 비밀번호 만들기 (예전 계정)
 $('#setpw-form').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -1776,6 +1919,9 @@ $('#setpw-form').addEventListener('submit', async (e) => {
   const user = auth.currentUser;
   if (!user || !profile) return;
   if (pw === profile.id || pw === idToPassword(profile.id)) { errEl.textContent = '아이디와 다른 비밀번호를 써 주세요.'; return; }
+  const qa = readQA($('#setpw-qa'));
+  const qaErr = checkQA(qa);
+  if (qaErr) { errEl.textContent = qaErr; return; }
   const btn = e.currentTarget.querySelector('button[type="submit"]');
   btn.disabled = true;
   try {
@@ -1787,8 +1933,9 @@ $('#setpw-form').addEventListener('submit', async (e) => {
       await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, idToPassword(profile.id)));
       await updatePassword(user, pw);
     }
-    await update(ref(db, `users/${user.uid}`), { pwSet: true });
-    $('#setpw-pw').value = ''; $('#setpw-pw2').value = '';
+    // 찾기 질문을 먼저 저장하고 pwSet을 함께 켬 (실패하면 비밀번호만 바뀐 상태 → 화면은 그대로, 다시 시도 가능)
+    await saveRecovery(pw, qa, { [`users/${user.uid}/pwSet`]: true });
+    $('#setpw-pw').value = ''; $('#setpw-pw2').value = ''; clearQA($('#setpw-qa'));
     toast('비밀번호를 만들었어요. 다음부터 아이디와 비밀번호로 로그인해요.', 'success');
   } catch (err) {
     console.warn('[비밀번호]', err);
@@ -1812,6 +1959,9 @@ $('#signup-form').addEventListener('submit', (e) => {
   if (pw.length < PW_MIN) return err(`비밀번호는 ${PW_MIN}자 이상이어야 해요.`);
   if (pw !== $('#su-pw2').value) return err('비밀번호 확인이 다르게 입력됐어요.');
   if (pw === id) return err('아이디와 다른 비밀번호를 써 주세요.');
+  const qa = readQA($('#su-qa'));
+  const qaErr = checkQA(qa);
+  if (qaErr) return err(qaErr);
   authGuard(e.currentTarget, async () => {
     signingUp = true;
     // 닉네임 중복은 계정을 만든 뒤 확인 (닉네임 목록은 로그인해야 읽을 수 있음). 겹치면 만든 계정을 지움
@@ -1830,6 +1980,13 @@ $('#signup-form').addEventListener('submit', (e) => {
         [`private/${uid}`]: { name },
         [`nicks/${nickKey(nick)}`]: uid,
       });
+      try {
+        await update(ref(db), await makeRecovery({ uid, id, domain: EMAIL_DOMAIN, password: pw, qa }));
+        clearQA($('#su-qa'));
+      } catch (rcvErr) {
+        console.warn('[비밀번호 찾기]', rcvErr);
+        setTimeout(() => toast('비밀번호 찾기 질문을 저장하지 못했어요. 프로필의 "찾기 질문 바꾸기"에서 다시 만들어 주세요.', 'warning'), 1500);
+      }
     } catch (dbErr) {
       // 데이터 저장에 실패하면 만든 로그인 계정도 지워서 다시 가입할 수 있게 함
       await cred.user.delete().catch(() => {});
@@ -2054,6 +2211,7 @@ function renderProfile() {
   $('#pf-avatar').style.background = 'transparent';
   $('#pf-avatar').innerHTML = `<img src="${animalImg(look.a, 'icon')}" alt="${animalOf(look.a).label}">`;
   $('#pf-nick').textContent = profile.nick;
+  $('#qa-missing').classList.toggle('hidden', !!profile.rcv);
   $('#pf-id').textContent = `@${profile.id}`;
   $('#pf-points').textContent = `${(profile.points || 0).toLocaleString()} 포인트`;
   const cell = (n, label) => `<div><b>${n || 0}</b><span>${label}</span></div>`;

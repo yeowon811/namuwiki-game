@@ -124,6 +124,10 @@
         "pwSet": {
           ".write": "auth != null && auth.uid === $uid",
           ".validate": "newData.val() === true"
+        },
+        "rcv": {
+          ".write": "auth != null && auth.uid === $uid",
+          ".validate": "newData.isString() && newData.val().length <= 128"
         }
       }
     },
@@ -407,6 +411,20 @@
       },
       "$other": {
         ".validate": false
+      }
+    },
+    "vault": {
+      "$uid": {
+        ".read": "auth != null && (auth.uid === $uid || auth.uid === root.child('users').child($uid).child('rcv').val())",
+        ".write": "auth != null && auth.uid === $uid",
+        ".validate": "newData.hasChildren(['salt', 'iv', 'ct']) && newData.child('salt').isString() && newData.child('iv').isString() && newData.child('ct').isString() && newData.child('ct').val().length <= 2000"
+      }
+    },
+    "keys": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid",
+        ".validate": "newData.hasChildren(['salt', 'iv', 'ct']) && newData.child('salt').isString() && newData.child('iv').isString() && newData.child('ct').isString() && newData.child('ct').val().length <= 2000"
       }
     }
   }

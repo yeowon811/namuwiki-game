@@ -778,3 +778,9 @@ body.has-ready-bar { padding-bottom: 96px; }
 .notice-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .notice-body { white-space: pre-wrap; word-break: break-word; line-height: 1.6; color: var(--color-text-secondary); max-height: 50vh; overflow-y: auto; margin-bottom: 4px; }
 .notice-modal .modal-footer { justify-content: space-between; }
+
+/* 비밀번호 찾기 질문 */
+.qa-box { display: grid; gap: 12px; }
+.qa-row { display: grid; gap: 6px; padding: 10px; border: 1px solid var(--color-border); border-radius: 8px; }
+.qa-row .qa-num { font-size: 12px; color: var(--color-text-tertiary); }
+.modal .form-item { margin-bottom: 10px; }
