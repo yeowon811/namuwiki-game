@@ -504,17 +504,31 @@ async function loadRoomPw() {
   roomPwShown.pw = pw;
   if (document.activeElement !== $('#room-pw')) $('#room-pw').value = pw;
 }
+// 스위치를 켰지만 아직 저장하지 않은 상태 (입력칸만 열림)
+let roomPwOpen = false;
+function syncRoomLockUI() {
+  if (!room) return;
+  const host = isHost();
+  const on = !!room.locked || (host && roomPwOpen);
+  $('#room-lock').setAttribute('aria-checked', String(on));
+  $('#room-pw-box').classList.toggle('hidden', !(host && on));
+  if (!on && document.activeElement !== $('#room-pw')) $('#room-pw').value = '';
+}
 $('#room-lock').onclick = async () => {
   if (!isHost()) return;
   if (room.locked) {
+    roomPwOpen = false;
     await update(ref(db), { [`rooms/${room.code}/locked`]: null, [`roomPw/${room.code}`]: null });
     roomPwShown = { code: null, pw: '' };
     $('#room-pw').value = '';
     toast('비밀번호를 껐어요. 이제 누구나 들어올 수 있어요.', 'info');
   } else {
-    $('#room-pw-box').classList.remove('hidden');
-    $('#room-pw').focus();
+    // 저장 전이면 켜고 끄기만 (입력칸 열기/닫기)
+    roomPwOpen = !roomPwOpen;
+    if (!roomPwOpen) $('#room-pw').value = '';
   }
+  syncRoomLockUI();
+  if (roomPwOpen && !room.locked) $('#room-pw').focus();
 };
 $('#room-pw-save').onclick = async () => {
   if (!isHost()) return;
@@ -532,6 +546,7 @@ $('#room-pw').addEventListener('input', (e) => { e.target.value = e.target.value
 $('#roompw-input').addEventListener('input', (e) => { e.target.value = e.target.value.replace(/[^0-9]/g, '').slice(0, 4); });
 
 function enterRoom(code) {
+  roomPwOpen = false;
   currentCode = code;
   store.set('nr.room', code, ss);
   history.replaceState(null, '', '?room=' + code);
@@ -1628,12 +1643,9 @@ function render() {
     $('#winners').disabled = !host;
     $('#public-room').setAttribute('aria-checked', String(room.public !== false));
     $('#public-room').disabled = !host;
-    $('#room-lock').setAttribute('aria-checked', String(!!room.locked));
     $('#room-lock').disabled = !host;
-    if (!host || !room.locked) {
-      if (!host) $('#room-pw-box').classList.add('hidden');
-      if (!room.locked && document.activeElement !== $('#room-pw') && $('#room-pw-box').classList.contains('hidden')) $('#room-pw').value = '';
-    } else $('#room-pw-box').classList.remove('hidden');
+    if (room.locked) roomPwOpen = false; // 저장되면 '열어 둔 상태'는 끝
+    syncRoomLockUI();
     $('#room-pw-desc').textContent = host
       ? (room.locked ? '새로 들어오는 사람은 이 비밀번호를 입력해야 해요. 바꾸려면 새 숫자를 넣고 저장하세요.' : '켜면 새로 들어오는 사람은 숫자 4자리 비밀번호를 입력해야 해요. 이미 방에 있는 사람은 그대로예요.')
       : (room.locked ? '🔒 비밀번호가 걸린 방이에요.' : '비밀번호가 걸려 있지 않아요.');
