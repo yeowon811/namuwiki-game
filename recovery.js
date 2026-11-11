@@ -1,5 +1,5 @@
-// 비밀번호 찾기 (질문 2개) — 서버 없이 동작
-// - 질문 2개 + 답으로 만든 열쇠(AK)로 비밀번호를 잠가서 vault/<uid>에 저장
+// 비밀번호 찾기 (질문 1개) — 서버 없이 동작
+// - 질문 + 답으로 만든 열쇠(AK)로 비밀번호를 잠가서 vault/<uid>에 저장
 // - vault는 '찾기용 계정'(<아이디>.rcv@…)으로 로그인해야만 읽을 수 있음. 찾기용 계정의 비밀번호도 질문+답으로 만들어서,
 //   질문이나 답이 틀리면 로그인이 안 되고, Firebase가 여러 번 틀린 시도를 막아 줌
 // - keys/<uid>: AK와 찾기용 계정 비밀번호를 '내 비밀번호'로 잠가서 저장 → 비밀번호를 바꿀 때 다시 잠글 수 있음
@@ -11,17 +11,17 @@ import {
 import { getDatabase, ref, get } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
 import { firebaseConfig } from './firebase-config.js';
 
-// 친구가 쉽게 맞히기 어려운 질문만 (혈액형·MBTI처럼 답이 몇 개 안 되는 질문은 뺌)
+// 질문 목록 (혈액형·전화번호 뒷자리처럼 남이 쉽게 알 수 있는 질문은 뺌)
 export const QUESTIONS = [
+  { id: 'trip', q: '내가 가본 첫 여행지는?' },
+  { id: 'pet', q: '처음 키워 본 반려동물은?' },
+  { id: 'nickname', q: '나의 어렸을 적 별명은?' },
+  { id: 'food', q: '내가 가장 좋아하는 음식은?' },
   { id: 'town', q: '어릴 때 살던 동네 이름은?' },
-  { id: 'pet', q: '처음 키운 반려동물 이름은?' },
-  { id: 'teacher', q: '가장 좋아했던 선생님 성함은?' },
-  { id: 'phone', q: '처음 가진 휴대폰 기종은?' },
-  { id: 'trip', q: '기억에 남는 첫 여행지는?' },
-  { id: 'nickname', q: '어릴 때 가족이 부르던 별명은?' },
-  { id: 'food', q: '어릴 때 가장 싫어했던 음식은?' },
+  { id: 'phone', q: '내 현재 핸드폰 기종은?' },
 ];
-export const CUSTOM = 'custom';
+export const QA_COUNT = 1;
+export const RCV_VER = 2; // 찾기 정보 방식 번호 (1 = 예전 질문 2개 방식 → 다시 만들어야 함)
 const ITER = 200000;
 const te = new TextEncoder();
 const b64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
@@ -30,19 +30,15 @@ const randB64 = (n) => b64(crypto.getRandomValues(new Uint8Array(n)));
 // 띄어쓰기·대소문자는 무시 (예: '서울 강남' = '서울강남')
 export const norm = (s) => String(s || '').normalize('NFC').toLowerCase().replace(/\s+/g, '');
 
-// qa = [{ qid, custom, answer }, { … }] → 문제가 있으면 안내 문구
+// qa = [{ qid, answer }] → 문제가 있으면 안내 문구
 export function checkQA(qa) {
-  if (!Array.isArray(qa) || qa.length !== 2) return '질문 2개에 답해 주세요.';
-  for (const [i, x] of qa.entries()) {
-    if (!x.qid) return `${i + 1}번 질문을 골라 주세요.`;
-    if (x.qid === CUSTOM && norm(x.custom).length < 4) return `${i + 1}번 질문을 4글자 이상 직접 써 주세요.`;
-    if (norm(x.answer).length < 2) return `${i + 1}번 답을 2글자 이상 써 주세요.`;
-  }
-  if (keyOf(qa[0]) === keyOf(qa[1])) return '서로 다른 질문 2개를 골라 주세요.';
+  if (!Array.isArray(qa) || qa.length !== QA_COUNT) return '비밀번호 찾기 질문에 답해 주세요.';
+  const [x] = qa;
+  if (!QUESTIONS.some((q) => q.id === x.qid)) return '비밀번호 찾기 질문을 골라 주세요.';
+  if (norm(x.answer).length < 2) return '질문의 답을 2글자 이상 써 주세요.';
   return null;
 }
-const keyOf = (x) => (x.qid === CUSTOM ? `c:${norm(x.custom)}` : `p:${x.qid}`);
-// 질문 순서는 상관없게 정렬
+const keyOf = (x) => `p:${x.qid}`;
 const secretOf = (qa) => qa.map((x) => `${keyOf(x)}\u0001${norm(x.answer)}`).sort().join('\u0002');
 
 async function kdf(secret, salt) {
@@ -121,6 +117,7 @@ export async function makeRecovery({ uid, id, domain, password, qa, oldRcv = nul
   const ak = await kdf(secretOf(qa), `nr-vault|${id}|${vs}`);
   return {
     [`users/${uid}/rcv`]: rcvUid,
+    [`users/${uid}/rcvV`]: RCV_VER,
     [`vault/${uid}`]: { salt: vs, ...(await seal(ak, password)) },
     [`keys/${uid}`]: await lockKeys(uid, password, { ak: b64(ak), vs, rcvEmail, rcvPw }),
   };
@@ -165,4 +162,55 @@ export async function recoverPassword({ id, domain, qa }) {
   } finally {
     await signOut(auth).catch(() => {});
   }
+}
+
+// ---------- 이 기기에 비밀번호 기억 ----------
+// 찾기 질문을 바꿀 때 비밀번호를 다시 묻지 않으려고, 비밀번호로 로그인한 기기에만 잠가서 보관
+// (브라우저 밖으로 꺼낼 수 없는 열쇠로 잠가서 IndexedDB에. 로그아웃하면 지움)
+const IDB = 'nr-secure';
+function idb() {
+  return new Promise((res, rej) => {
+    const r = indexedDB.open(IDB, 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('kv');
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+async function kv(mode, fn) {
+  const d = await idb();
+  try {
+    return await new Promise((res, rej) => {
+      const t = d.transaction('kv', mode);
+      const req = fn(t.objectStore('kv'));
+      t.oncomplete = () => res(req?.result);
+      t.onerror = () => rej(t.error);
+    });
+  } finally { d.close(); }
+}
+async function deviceKey() {
+  let k = await kv('readonly', (s) => s.get('key'));
+  if (!k) {
+    k = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+    await kv('readwrite', (s) => s.put(k, 'key'));
+  }
+  return k;
+}
+export async function rememberPassword(uid, password) {
+  try {
+    const key = await deviceKey();
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, te.encode(password));
+    await kv('readwrite', (s) => s.put({ iv, ct }, `pw:${uid}`));
+  } catch (e) { console.warn('[기기 기억]', e); }
+}
+export async function recallPassword(uid) {
+  try {
+    const box = await kv('readonly', (s) => s.get(`pw:${uid}`));
+    if (!box) return null;
+    const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: box.iv }, await deviceKey(), box.ct);
+    return new TextDecoder().decode(pt);
+  } catch { return null; }
+}
+export async function forgetPasswords() {
+  try { await kv('readwrite', (s) => s.clear()); } catch { /* 무시 */ }
 }

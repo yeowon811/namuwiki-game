@@ -7,7 +7,9 @@ import {
   getDatabase, ref, get, set, update, remove, push, onValue, onDisconnect, serverTimestamp, runTransaction,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js';
 import { firebaseConfig } from './firebase-config.js';
-import { QUESTIONS, CUSTOM, checkQA, makeRecovery, relock, unlockKeys, recoverPassword } from './recovery.js?v=1';
+import {
+  QUESTIONS, QA_COUNT, RCV_VER, checkQA, makeRecovery, relock, unlockKeys, recoverPassword, rememberPassword, recallPassword, forgetPasswords,
+} from './recovery.js?v=2';
 import KEYWORDS from './keywords.js';
 import {
   ANIMALS, ACCESSORIES, SLOTS, ANIMAL_PRICE, ACC_PRICE,
@@ -1760,7 +1762,8 @@ $('#login-form').addEventListener('submit', (e) => {
   authGuard(e.currentTarget, async () => {
     try {
       if (!pw) throw Object.assign(new Error('no password'), { code: 'auth/missing-password' });
-      await signInWithEmailAndPassword(auth, idToEmail(id), pw);
+      const cred = await signInWithEmailAndPassword(auth, idToEmail(id), pw);
+      rememberPassword(cred.user.uid, pw);
     } catch (err) {
       // 비밀번호를 아직 만들지 않은 예전 계정: 예전 방식으로 들어온 뒤 '비밀번호 만들기' 화면으로
       if (!/invalid-credential|wrong-password|missing-password|invalid-login/.test(err?.code || '')) throw err;
@@ -1771,28 +1774,15 @@ $('#login-form').addEventListener('submit', (e) => {
 });
 
 // ---------- 비밀번호 찾기 질문 (recovery.js) ----------
-const QA_OPTS = '<option value="">질문 고르기</option>'
-  + QUESTIONS.map((q) => `<option value="${q.id}">${esc(q.q)}</option>`).join('')
-  + `<option value="${CUSTOM}">직접 질문 쓰기</option>`;
+const QA_OPTS = '<option value="">질문 고르기</option>' + QUESTIONS.map((q) => `<option value="${q.id}">${esc(q.q)}</option>`).join('');
 function mountQA(box) {
-  box.innerHTML = [1, 2].map((n) => `<div class="qa-row"><span class="qa-num">질문 ${n}</span>`
-    + `<select class="input select qa-q" aria-label="질문 ${n}">${QA_OPTS}</select>`
-    + `<input class="input qa-custom hidden" maxlength="40" placeholder="질문을 직접 써 주세요 (예: 우리 집 와이파이 이름 앞 4자리는?)" aria-label="직접 쓴 질문 ${n}">`
-    + `<input class="input qa-a" maxlength="40" placeholder="답" autocomplete="off" aria-label="답 ${n}"></div>`).join('');
-  box.querySelectorAll('.qa-q').forEach((sel) => sel.addEventListener('change', () => {
-    sel.parentElement.querySelector('.qa-custom').classList.toggle('hidden', sel.value !== CUSTOM);
-  }));
+  box.innerHTML = Array.from({ length: QA_COUNT }, () => '<div class="qa-row">'
+    + `<select class="input select qa-q" aria-label="비밀번호 찾기 질문">${QA_OPTS}</select>`
+    + '<input class="input qa-a" maxlength="40" placeholder="답" autocomplete="off" aria-label="답"></div>').join('');
 }
-const readQA = (box) => [...box.querySelectorAll('.qa-row')].map((r) => ({
-  qid: r.querySelector('.qa-q').value, custom: r.querySelector('.qa-custom').value, answer: r.querySelector('.qa-a').value,
-}));
+const readQA = (box) => [...box.querySelectorAll('.qa-row')].map((r) => ({ qid: r.querySelector('.qa-q').value, answer: r.querySelector('.qa-a').value }));
 function clearQA(box) {
-  box.querySelectorAll('.qa-row').forEach((r) => {
-    r.querySelector('.qa-q').value = '';
-    r.querySelector('.qa-custom').value = '';
-    r.querySelector('.qa-custom').classList.add('hidden');
-    r.querySelector('.qa-a').value = '';
-  });
+  box.querySelectorAll('.qa-row').forEach((r) => { r.querySelector('.qa-q').value = ''; r.querySelector('.qa-a').value = ''; });
 }
 ['#su-qa', '#setpw-qa', '#rc-qa', '#dlg-qa'].forEach((s) => mountQA($(s)));
 // 찾기 질문 저장 (본 계정으로 로그인한 상태에서): 처음 만들기 또는 바꾸기
@@ -1831,6 +1821,7 @@ $('#recover-form').addEventListener('submit', (e) => {
     const found = await recoverPassword({ id, domain: EMAIL_DOMAIN, qa });
     const cred = await signInWithEmailAndPassword(auth, idToEmail(id), found.password);
     await updatePassword(cred.user, pw);
+    rememberPassword(found.uid, pw);
     await update(ref(db), { ...(await relock({ uid: found.uid, password: pw, keysObj: found.keysObj })), [`users/${found.uid}/pwSet`]: true });
     $('#rc-pw').value = ''; $('#rc-pw2').value = ''; clearQA($('#rc-qa'));
     showAuthForm('login');
@@ -1870,6 +1861,7 @@ $('#pw-form').addEventListener('submit', async (e) => {
       keysObj = box ? await unlockKeys(user.uid, cur, box).catch(() => null) : null;
     }
     await updatePassword(user, pw);
+    rememberPassword(user.uid, pw);
     if (keysObj) await update(ref(db), await relock({ uid: user.uid, password: pw, keysObj }));
     $('#pw-dialog').close();
     toast(profile.rcv && !keysObj ? '비밀번호를 바꿨어요. 비밀번호 찾기 질문은 다시 만들어 주세요.' : '비밀번호를 바꿨어요.', profile.rcv && !keysObj ? 'warning' : 'success');
@@ -1879,17 +1871,20 @@ $('#pw-form').addEventListener('submit', async (e) => {
     btn.disabled = false;
   }
 });
-$('#btn-qa').onclick = () => {
+let qaRemembered = null; // 이 기기에 기억된 비밀번호 (찾기 질문 바꿀 때 묻지 않으려고)
+$('#btn-qa').onclick = async () => {
   clearQA($('#dlg-qa'));
   $('#qa-cur').value = '';
   $('#qa-error').textContent = '';
+  qaRemembered = authUser ? await recallPassword(authUser.uid) : null;
+  $('#qa-cur-item').classList.toggle('hidden', !!qaRemembered);
   $('#qa-dialog').showModal();
 };
 $('#qa-form').addEventListener('submit', async (e) => {
   if (e.submitter?.value !== 'ok') return;
   e.preventDefault();
   const qa = readQA($('#dlg-qa'));
-  const cur = $('#qa-cur').value;
+  const cur = $('#qa-cur').value || qaRemembered || '';
   const errEl = $('#qa-error');
   errEl.textContent = checkQA(qa) || (cur ? '' : '지금 비밀번호를 입력해 주세요.');
   if (errEl.textContent) return;
@@ -1902,7 +1897,13 @@ $('#qa-form').addEventListener('submit', async (e) => {
     $('#qa-dialog').close();
     toast('비밀번호 찾기 질문을 저장했어요.', 'success');
   } catch (err) {
-    errEl.textContent = /invalid-credential|wrong-password/.test(err?.code || '') ? '지금 비밀번호가 맞지 않아요.' : authMessage(err);
+    const badPw = /invalid-credential|wrong-password/.test(err?.code || '');
+    if (badPw && !$('#qa-cur').value && qaRemembered) {
+      // 다른 기기에서 비밀번호를 바꿔서 기억된 비밀번호가 맞지 않음 → 한 번 입력받음
+      qaRemembered = null;
+      $('#qa-cur-item').classList.remove('hidden');
+      errEl.textContent = '비밀번호가 바뀌었어요. 지금 비밀번호를 한 번 입력해 주세요.';
+    } else errEl.textContent = badPw ? '지금 비밀번호가 맞지 않아요.' : authMessage(err);
   } finally {
     btn.disabled = false;
   }
@@ -1934,6 +1935,7 @@ $('#setpw-form').addEventListener('submit', async (e) => {
       await updatePassword(user, pw);
     }
     // 찾기 질문을 먼저 저장하고 pwSet을 함께 켬 (실패하면 비밀번호만 바뀐 상태 → 화면은 그대로, 다시 시도 가능)
+    rememberPassword(user.uid, pw);
     await saveRecovery(pw, qa, { [`users/${user.uid}/pwSet`]: true });
     $('#setpw-pw').value = ''; $('#setpw-pw2').value = ''; clearQA($('#setpw-qa'));
     toast('비밀번호를 만들었어요. 다음부터 아이디와 비밀번호로 로그인해요.', 'success');
@@ -1967,6 +1969,7 @@ $('#signup-form').addEventListener('submit', (e) => {
     // 닉네임 중복은 계정을 만든 뒤 확인 (닉네임 목록은 로그인해야 읽을 수 있음). 겹치면 만든 계정을 지움
     let cred;
     try { cred = await createUserWithEmailAndPassword(auth, idToEmail(id), pw); } catch (ce) { signingUp = false; throw ce; }
+    rememberPassword(cred.user.uid, pw);
     $('#su-pw').value = ''; $('#su-pw2').value = '';
     const uid = cred.user.uid;
     try {
@@ -2002,6 +2005,7 @@ let signingUp = false;
 $$('.btn-logout').forEach((b) => (b.onclick = async () => {
   if (room) return;
   await stopPresence();
+  await forgetPasswords(); // 이 기기에 기억한 비밀번호도 지움 (같이 쓰는 컴퓨터 대비)
   await signOut(auth);
 }));
 
@@ -2211,7 +2215,11 @@ function renderProfile() {
   $('#pf-avatar').style.background = 'transparent';
   $('#pf-avatar').innerHTML = `<img src="${animalImg(look.a, 'icon')}" alt="${animalOf(look.a).label}">`;
   $('#pf-nick').textContent = profile.nick;
-  $('#qa-missing').classList.toggle('hidden', !!profile.rcv);
+  const qaOld = !!profile.rcv && profile.rcvV !== RCV_VER;
+  $('#qa-missing').classList.toggle('hidden', !!profile.rcv && !qaOld);
+  $('#qa-missing-text').innerHTML = qaOld
+    ? '비밀번호 찾기 방식이 바뀌었어요. <b>찾기 질문 바꾸기</b>에서 질문을 다시 만들어 주세요.'
+    : '비밀번호 찾기 질문이 없어요. 비밀번호를 잊으면 찾을 수 없으니 <b>찾기 질문 바꾸기</b>에서 만들어 주세요.';
   $('#pf-id').textContent = `@${profile.id}`;
   $('#pf-points').textContent = `${(profile.points || 0).toLocaleString()} 포인트`;
   const cell = (n, label) => `<div><b>${n || 0}</b><span>${label}</span></div>`;

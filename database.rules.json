@@ -128,6 +128,10 @@
         "rcv": {
           ".write": "auth != null && auth.uid === $uid",
           ".validate": "newData.isString() && newData.val().length <= 128"
+        },
+        "rcvV": {
+          ".write": "auth != null && auth.uid === $uid",
+          ".validate": "newData.isNumber()"
         }
       }
     },

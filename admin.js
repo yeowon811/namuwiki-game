@@ -105,7 +105,7 @@ function render() {
     ? members.map((u) => {
       const st = u.stats || {};
       const seen = isOnline(u.uid) ? '<span class="on-dot"></span>접속 중' : `<span class="text-tertiary">${fmtAgo(presence[u.uid]?.lastSeen)}</span>`;
-      return `<tr class="${picked.has(u.uid) ? 'picked' : ''}"><td class="pick"><input type="checkbox" data-pick="${u.uid}" ${picked.has(u.uid) ? 'checked' : ''} aria-label="${esc(u.nick)} 선택"></td><td class="nick">${esc(u.nick)}${u.approved ? '' : ' <span class="tag tag-error">정지</span>'}${u.pwSet === true ? '' : ' <span class="tag tag-warning" title="아직 비밀번호를 만들지 않아서 아이디만 알면 누구나 로그인할 수 있어요">비밀번호 없음</span>'}${u.pwSet === true && !u.rcv ? ' <span class="tag" title="비밀번호를 잊으면 찾을 수 없어요">찾기 질문 없음</span>' : ''}</td><td>@${esc(u.id)}</td><td>${esc(u.name)}</td>`
+      return `<tr class="${picked.has(u.uid) ? 'picked' : ''}"><td class="pick"><input type="checkbox" data-pick="${u.uid}" ${picked.has(u.uid) ? 'checked' : ''} aria-label="${esc(u.nick)} 선택"></td><td class="nick">${esc(u.nick)}${u.approved ? '' : ' <span class="tag tag-error">정지</span>'}${u.pwSet === true ? '' : ' <span class="tag tag-warning" title="아직 비밀번호를 만들지 않아서 아이디만 알면 누구나 로그인할 수 있어요">비밀번호 없음</span>'}${u.pwSet === true && u.rcvV !== 2 ? ' <span class="tag" title="비밀번호를 잊으면 찾을 수 없어요">찾기 질문 없음</span>' : ''}</td><td>@${esc(u.id)}</td><td>${esc(u.name)}</td>`
         + `<td class="seen">${seen}</td>`
         + `<td class="num">${(u.points || 0).toLocaleString()}</td><td class="num">${st.games || 0}</td>`
         + `<td class="num">${st.win1 || 0}/${st.win2 || 0}/${st.win3 || 0}</td><td class="num">${st.daily1 || 0}</td>`
