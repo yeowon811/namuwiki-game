@@ -2,6 +2,7 @@ import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/fireba
 import {
   getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut,
   updatePassword, reauthenticateWithCredential, EmailAuthProvider, signInAnonymously, deleteUser,
+  setPersistence, browserSessionPersistence, browserLocalPersistence,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import {
   getDatabase, ref, get, set, update, remove, push, onValue, onDisconnect, serverTimestamp, runTransaction,
@@ -274,7 +275,7 @@ if (inviteCode) {
 // 방 데이터는 참가자가 직접 쓰므로, 숫자여야 하는 칸에 글자(화면을 조작하는 코드 등)가 들어 있으면 버림
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 const PLAYER_NUMS = ['clicks', 'hints', 'violations', 'returns', 'away', 'leg', 'elapsed', 'joinedAt', 'offlineSince', 'jumpAt'];
-const PLAYER_BOOLS = ['dq', 'auto', 'online', 'ready'];
+const PLAYER_BOOLS = ['dq', 'auto', 'online', 'ready', 'guest'];
 const PLAYER_STATUS = ['waiting', 'playing', 'finished', 'gaveup'];
 function cleanPlayer(id, p) {
   const o = { ...p, id, name: maskBad(String(p.name ?? '')) };
@@ -413,7 +414,7 @@ async function createRoom(name) {
     state: 'lobby',
     round: 0,
     createdAt: serverTimestamp(),
-    players: { [playerId]: { name, status: 'waiting', online: true, joinedAt: serverTimestamp(), char: myLook() } },
+    players: { [playerId]: { name, status: 'waiting', online: true, joinedAt: serverTimestamp(), char: myLook(), ...guestMark() } },
   });
   enterRoom(code);
 }
@@ -432,7 +433,7 @@ async function joinRoom(code, name) {
     if (!name) throw new Error('닉네임을 입력해주세요.');
     if (Object.keys(players).length >= MAX_PLAYERS) throw new Error(`방이 가득 찼어요. (최대 ${MAX_PLAYERS}명)`);
     // 게임 도중에 들어오면 'waiting'(관전) 상태로 있다가 다음 판부터 참가
-    await set(roomRef(code, 'players', playerId), { name, status: 'waiting', online: true, joinedAt: serverTimestamp(), char: myLook() });
+    await set(roomRef(code, 'players', playerId), { name, status: 'waiting', online: true, joinedAt: serverTimestamp(), char: myLook(), ...guestMark() });
   }
   enterRoom(code);
 }
@@ -719,6 +720,7 @@ function maintain() {
     roomBeat = { code: room.code, at: Date.now() };
     set(ref(db, `roomIndex/${room.code}`), { lastActive: serverTimestamp() }).catch(() => {});
   }
+  cleanupGoneGuests();
   if (isHost() && room.ghosts?.length) {
     const fix = {};
     for (const id of room.ghosts) fix[`players/${id}`] = null;
@@ -920,7 +922,7 @@ async function startDaily(name) {
     public: false,
     daily: { date, start: pz.start, targets: pz.targets },
     createdAt: serverTimestamp(),
-    players: { [playerId]: { name, status: 'waiting', online: true, joinedAt: serverTimestamp(), char: myLook() } },
+    players: { [playerId]: { name, status: 'waiting', online: true, joinedAt: serverTimestamp(), char: myLook(), ...guestMark() } },
   });
   dailyAutoStart = code;
   enterRoom(code);
@@ -1721,9 +1723,58 @@ const PW_MIN = 6;
 const GUEST_TAG = '(손님)';
 const GUEST_KEY = 'nr.guestName';
 const isGuest = () => !!authUser?.isAnonymous;
+const guestMark = () => (isGuest() ? { guest: true } : {});
+// 손님은 1시간까지: 시간이 지나면 손님 화면이 스스로 방에서 나가고 손님 계정을 지움 (게임 중이면 판이 끝난 뒤)
+const GUEST_LIMIT_MS = 60 * 60 * 1000;
+const GUEST_WARN_MS = 5 * 60 * 1000;
+const GUEST_START_KEY = 'nr.guestStart';
+// 연결이 끊긴 손님은 방장이 방에서 지움 (창을 닫은 손님의 캐릭터가 남지 않게). 새로고침은 금방 다시 연결되니 여유를 둠
+const GUEST_GONE_MS = 20 * 1000;
+const GUEST_GONE_PLAYING_MS = 60 * 1000;
+const guestStart = () => Number(store.get(GUEST_START_KEY, ss)) || Date.now();
+const guestLeftMs = () => guestStart() + GUEST_LIMIT_MS - Date.now();
+let guestWarned = false;
+let guestEnding = false;
+async function checkGuestTime() {
+  if (!isGuest() || guestEnding) return;
+  const left = guestLeftMs();
+  if (left <= GUEST_WARN_MS && !guestWarned) {
+    guestWarned = true;
+    toast(`손님 시간이 ${Math.max(1, Math.ceil(left / 60000))}분 남았어요. 계속 하려면 회원가입해 주세요.`, 'warning');
+  }
+  const note = $('#guest-left');
+  if (note) note.textContent = left > 0 ? `남은 시간 ${Math.ceil(left / 60000)}분` : '';
+  if (left > 0) return;
+  const ph = phase();
+  if (ph === 'countdown' || (ph === 'playing' && me()?.status === 'playing')) return; // 달리는 중이면 판이 끝난 뒤
+  guestEnding = true;
+  try {
+    if (room) await leaveRoom().catch(() => {});
+    store.del(GUEST_START_KEY, ss);
+    const u = auth.currentUser;
+    if (u?.isAnonymous) await deleteUser(u).catch(() => signOut(auth));
+    setTimeout(() => toast('손님 시간(1시간)이 끝났어요. 회원가입하면 계속 할 수 있어요.', 'info'), 300);
+  } finally {
+    guestEnding = false;
+    guestWarned = false;
+  }
+}
+setInterval(checkGuestTime, 15000);
+// 방장: 창을 닫고 나간 손님 정리
+function cleanupGoneGuests() {
+  if (!room || !isHost()) return;
+  const limit = room.state === 'playing' ? GUEST_GONE_PLAYING_MS : GUEST_GONE_MS;
+  const gone = room.players.filter((p) => p.guest && p.id !== playerId && !p.online && p.offlineSince && now() - p.offlineSince > limit);
+  if (!gone.length) return;
+  const fix = {};
+  for (const p of gone) fix[`players/${p.id}`] = null;
+  update(roomRef(room.code), fix).catch((e) => console.warn('[손님 정리]', e.message));
+}
+store.del(GUEST_KEY); // 예전에 브라우저에 남겨 둔 손님 이름 정리
+// 손님 로그인과 이름은 그 탭(창)에만 남음: 새로고침하면 그대로, 창을 닫으면 사라짐
 function guestProfile() {
-  let name = store.get(GUEST_KEY) || '';
-  if (!name) { name = `손님${Math.floor(100 + Math.random() * 900)}`; store.set(GUEST_KEY, name); }
+  let name = store.get(GUEST_KEY, ss) || '';
+  if (!name) { name = `손님${Math.floor(100 + Math.random() * 900)}`; store.set(GUEST_KEY, name, ss); }
   return { nick: `${name}${GUEST_TAG}`, approved: true, pwSet: true, rcv: 'guest', rcvV: RCV_VER, points: 0, stats: {}, guest: true };
 }
 let authUser = null;
@@ -1762,7 +1813,10 @@ async function authGuard(form, fn) {
   const btn = form.querySelector('button[type="submit"]');
   btn.disabled = true;
   $('#auth-error').textContent = '';
-  try { await fn(); } catch (e) { console.warn(e); $('#auth-error').textContent = authMessage(e); }
+  try {
+    await setPersistence(auth, browserLocalPersistence).catch(() => {}); // 회원은 창을 닫아도 로그인 유지
+    await fn();
+  } catch (e) { console.warn(e); $('#auth-error').textContent = authMessage(e); }
   finally { btn.disabled = false; }
 }
 
@@ -1933,7 +1987,9 @@ $('#guest-form').addEventListener('submit', async (e) => {
   const btn = e.currentTarget.querySelector('button[type="submit"]');
   btn.disabled = true;
   try {
-    store.set(GUEST_KEY, name);
+    store.set(GUEST_KEY, name, ss);
+    await setPersistence(auth, browserSessionPersistence); // 창을 닫으면 손님 로그인 기록이 사라짐
+    store.set(GUEST_START_KEY, String(Date.now()), ss);
     await signInAnonymously(auth);
   } catch (err) {
     console.warn('[손님]', err);
@@ -1947,6 +2003,7 @@ async function leaveGuest() {
   if (room) return;
   await stopPresence();
   const u = auth.currentUser;
+  store.del(GUEST_START_KEY, ss);
   if (u?.isAnonymous) await deleteUser(u).catch(() => signOut(auth));
   else await signOut(auth);
 }
@@ -2199,7 +2256,9 @@ onAuthStateChanged(auth, (user) => {
     profileUnsubs = [onValue(ref(db, 'notice'), (s) => { notice = s.val(); maybeShowNotice(); }, () => {})];
     profile = guestProfile();
     profileLoaded = true;
+    if (!store.get(GUEST_START_KEY, ss)) store.set(GUEST_START_KEY, String(Date.now()), ss);
     showHome();
+    checkGuestTime();
     return;
   }
   if (!signingUp) watchProfile(user.uid);
