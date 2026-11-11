@@ -255,6 +255,9 @@
         .hint{margin-top:8px;font-size:12px;line-height:1.55;padding:8px 10px;border-radius:6px;background:var(--primary-bg);color:var(--text)}
         .hint b{color:var(--primary)}
         .pen{margin-top:6px;font-size:12px;color:var(--gold)}
+        .hw{margin-top:8px;font-size:12px;line-height:1.55;padding:8px 10px;border-radius:6px;
+          background:rgba(250,173,20,.12);border:1px solid rgba(250,173,20,.45);color:var(--text)}
+        .hw b{display:block;color:var(--gold);font-size:13px;font-variant-numeric:tabular-nums}
         .warn{margin-top:8px;font-size:12px;padding:0 7px;line-height:20px;border-radius:4px;display:inline-block;
           color:var(--error);background:var(--error-bg);border:1px solid var(--error-border)}
         .board{border-top:1px solid var(--border)}
@@ -355,6 +358,7 @@
             <button type="button" class="ret" title="누를 수 있는 링크가 하나도 없는 막다른 문서에서만 직전 문서로 돌아가요.">↩ 이전 문서로</button>
             <button type="button" class="hintb" title="목표 문서가 무엇인지 짧은 설명을 봐요. 페널티가 있어요.">💡 힌트</button>
           </div>
+          <div class="hw" hidden></div>
           <div class="hint" hidden></div>
           <div class="pen" hidden></div>
           <div class="warn" hidden></div>
@@ -451,6 +455,31 @@
     if (!root || !race) return;
     const ms = (race.finished ? race.finishT : Date.now()) - race.startAt;
     root.querySelector('.time').textContent = fmt(ms);
+    renderWait();
+  }
+
+  // 힌트 카운트다운: 힌트를 쓴 사람이 마지막 등수로 도착하면, 페널티 시간 안에 도착하면 앞설 수 있음 (게임 페이지가 알려줌)
+  let waitToasted = null;
+  function renderWait() {
+    const el = root.querySelector('.hw');
+    const w = race?.board?.wait;
+    const left = w ? w.until - Date.now() : 0;
+    el.hidden = !(left > 0);
+    if (el.hidden) return;
+    const sec = Math.ceil(left / 1000);
+    const names = (w.names || []).map((n) => `${n}님`).join(', ');
+    const mine = (w.who || []).includes(race.playerId);
+    const place = w.winners > 1 ? `${w.winners}등 안에 들어요` : '이겨요';
+    const msg = mine
+      ? `힌트 페널티 때문에 아직 순위가 확정되지 않았어요. ${sec}초 동안 아무도 도착하지 못하면 순위가 그대로 확정돼요!`
+      : race.finished || race.dq
+        ? `${names}이 힌트를 쓰고 도착했어요. ${sec}초 뒤에 순위가 확정돼요.`
+        : `${names}이 힌트를 써서 기록에 페널티가 붙었어요. ${sec}초 안에 도착하면 앞설 수 있어요! 못 하면 ${names}이 ${place}.`;
+    el.innerHTML = `<b>⏱ 힌트 카운트다운 ${sec}초</b>${esc(msg)}`;
+    if (waitToasted !== w.until) {
+      waitToasted = w.until;
+      if (!mine && !race.finished) toast(`${names}이 힌트를 쓰고 도착했어요! ${sec}초 안에 도착하면 앞설 수 있어요.`, 4000, 'warning');
+    }
   }
 
   function renderBoard() {
@@ -474,7 +503,7 @@
         rk = rank;
         rkCls = rank <= 3 ? 'r' + rank : '';
         cls += ' fin';
-        s = board.mode === 'clicks' ? `${p.clicks}클릭 · ${fmtP(p.elapsed)}` : `${fmtP(p.elapsed)} · ${p.clicks}클릭`;
+        s = (board.mode === 'clicks' ? `${p.clicks}클릭 · ${fmtP(p.elapsed)}` : `${fmtP(p.elapsed)} · ${p.clicks}클릭`) + (p.hints ? ' 💡' : '');
       } else if (p.status === 'gaveup') {
         cls += ' out';
         s = p.dq ? '실격' : '포기';

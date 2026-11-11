@@ -100,9 +100,14 @@ function syncExt() {
     mode: room.mode,
     players: ranking(room).map((p) => ({
       id: p.id, name: p.name, status: p.status, me: p.id === playerId,
-      clicks: p.clicks ?? null, elapsed: p.elapsed ?? null, leg: p.leg || 0, dq: !!p.dq,
+      clicks: p.clicks ?? null, elapsed: p.elapsed ?? null, leg: p.leg || 0, dq: !!p.dq, hints: p.hints || 0,
     })),
     total: targetsOf(room).length,
+    // 힌트 카운트다운 (확장 프로그램 1.8.0부터 나무위키 화면에 표시). until은 내 PC 시계 기준
+    wait: (() => {
+      const w = hintWait();
+      return w ? { until: w.until - clockOffset, who: w.who.map((p) => p.id), names: w.who.map((p) => p.name), winners: room.winners || 1 } : null;
+    })(),
   });
   if (racing && ext.sentKey !== raceKey()) {
     ext.sentKey = raceKey();
