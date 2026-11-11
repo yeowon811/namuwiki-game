@@ -2073,36 +2073,54 @@ async function claimRoundRewards() {
 
 
 // ---------- 오늘의 퀘스트 ----------
-// 매일 자정(한국 시간)에 쉬움 2개(30P) + 어려움 2개(50P)가 정해짐 (모두 같은 퀘스트)
+// 매일 자정(한국 시간)에 난이도별로 정해짐: ★ 2개(30P) + ★★ 1개(50P) + ★★★ 1개(80P) (모두 같은 퀘스트)
 // 고르는 방법은 database.rules.json의 lastQuest 규칙과 똑같아야 해요 (서버가 오늘의 퀘스트인지 확인)
-// 출석하기: 매일 맨 위에 항상 있음, 들어오기만 하면 받을 수 있음 (쉬움과 같은 30P)
+// 출석하기: 매일 맨 위에 항상 있음, 들어오기만 하면 받을 수 있음 (30P)
 const QUEST_ATTEND = { id: 'attend', title: '출석하기', target: 1, amt: 30, sub: '오늘 들어오면 바로 받아요', attend: true };
-const QUEST_EASY = [
-  { id: 'games3', title: '오늘 3판 하기', target: 3, amt: 30 },
-  { id: 'win1', title: '1등 하기', target: 1, amt: 30, sub: '3명 이상인 방' },
-  { id: 'dailytry', title: '오늘의 문제 도착하기', target: 1, amt: 30, sub: '오늘의 챔피언' },
-  { id: 'relay1', title: '릴레이 완주하기', target: 1, amt: 30 },
+const QUEST_STAR1 = [
+  { id: 'games3', title: '오늘 3판 하기', target: 3, amt: 30, star: 1 },
+  { id: 'dailytry', title: '오늘의 문제 도착하기', target: 1, amt: 30, sub: '오늘의 챔피언', star: 1 },
+  { id: 'relay1', title: '릴레이 모드 완주하기', target: 1, amt: 30, star: 1 },
+  { id: 'nohint1', title: '힌트 없이 완주하기', target: 1, amt: 30, star: 1 },
+  { id: 'clicks1', title: '최소 클릭 모드 완주하기', target: 1, amt: 30, star: 1 },
+  { id: 'time1', title: '타임어택 모드 완주하기', target: 1, amt: 30, star: 1 },
+  { id: 'fast5', title: '5분 안에 도착하기', target: 1, amt: 30, sub: '힌트 페널티 포함', star: 1 },
 ];
-const QUEST_HARD = [
-  { id: 'games5', title: '오늘 5판 하기', target: 5, amt: 50 },
-  { id: 'win3', title: '1등 3번 하기', target: 3, amt: 50, sub: '3명 이상인 방' },
-  { id: 'dailytop3', title: '오늘의 챔피언 3등 안에 들기', target: 1, amt: 50 },
+const QUEST_STAR2 = [
+  { id: 'win1', title: '1등 하기', target: 1, amt: 50, sub: '3명 이상인 방', star: 2 },
+  { id: 'games5', title: '오늘 5판 하기', target: 5, amt: 50, star: 2 },
+  { id: 'allmodes', title: '세 모드 모두 완주하기', target: 3, amt: 50, sub: '타임어택·최소 클릭·릴레이', star: 2 },
+  { id: 'fast3', title: '3분 안에 도착하기', target: 1, amt: 50, sub: '힌트 페널티 포함', star: 2 },
 ];
-const QUEST_PAIRS = [[0, 1], [0, 2], [0, 3], [1, 2], [1, 3], [2, 3]]; // 쉬움 4개 중 2개
-const QUEST_PAIRS_H = [[0, 1], [0, 2], [1, 2]]; // 어려움 3개 중 2개
+const QUEST_STAR3 = [
+  { id: 'win3', title: '1등 3번 하기', target: 3, amt: 80, sub: '3명 이상인 방', star: 3 },
+  { id: 'dailytop3', title: '오늘의 챔피언 3등 안에 들기', target: 1, amt: 80, star: 3 },
+  { id: 'games10', title: '오늘 10판 하기', target: 10, amt: 80, star: 3 },
+  { id: 'fast2', title: '2분 안에 도착하기', target: 1, amt: 80, sub: '힌트 페널티 포함', star: 3 },
+];
+// ★ 7개 중 2개 (21가지)
+const QUEST_PAIRS = [[0, 1], [0, 2], [0, 3], [0, 4], [0, 5], [0, 6], [1, 2], [1, 3], [1, 4], [1, 5], [1, 6], [2, 3], [2, 4], [2, 5], [2, 6], [3, 4], [3, 5], [3, 6], [4, 5], [4, 6], [5, 6]];
+const QUEST_FAST = { fast5: 5 * 60000, fast3: 3 * 60000, fast2: 2 * 60000 }; // 도착 시간 퀘스트 기준 (기록 = 힌트 페널티 포함)
 const QUEST_WIN_MIN = 3; // 1등 퀘스트는 이 인원 이상인 방에서만
 const questDay = () => Math.floor((now() + 9 * 3600000) / 86400000); // 한국 시간 기준 날짜 번호
+// ★ 짝은 날짜 % 21, ★★는 날짜 % 4, ★★★는 (날짜 / 4의 몫 + 날짜) % 4 → 매일 모두 바뀌고 ★★·★★★는 16일마다 모든 조합
 function todaysQuests(day = questDay()) {
-  const e = QUEST_PAIRS[day % 6];
-  const h = QUEST_PAIRS_H[Math.floor(day / 6) % 3];
-  return [QUEST_ATTEND, QUEST_EASY[e[0]], QUEST_EASY[e[1]], { ...QUEST_HARD[h[0]], hard: true }, { ...QUEST_HARD[h[1]], hard: true }];
+  const e = QUEST_PAIRS[day % 21];
+  return [QUEST_ATTEND, QUEST_STAR1[e[0]], QUEST_STAR1[e[1]], QUEST_STAR2[day % 4], QUEST_STAR3[(Math.floor(day / 4) + day) % 4]];
 }
+// 난이도 표시: ★☆☆ / ★★☆ / ★★★
+const questStars = (n) => `<span aria-label="난이도 ${n}">${'★'.repeat(n)}<span class="qoff">${'★'.repeat(3 - n)}</span></span>`;
 // 오늘 진행 상황 (users/{uid}/quest, 날짜가 바뀌면 처음부터)
 const questProg = (day = questDay()) => (profile?.quest?.day === day ? profile.quest : { day });
 function questValue(q, prog) {
   switch (q.id) {
     case 'attend': return 1;
-    case 'games3': case 'games5': return prog.games || 0;
+    case 'games3': case 'games5': case 'games10': return prog.games || 0;
+    case 'nohint1': return prog.nohint || 0;
+    case 'clicks1': return prog.modes?.clicks ? 1 : 0;
+    case 'time1': return prog.modes?.time ? 1 : 0;
+    case 'allmodes': return ['time', 'clicks', 'relay'].filter((m) => prog.modes?.[m]).length;
+    case 'fast5': case 'fast3': case 'fast2': return prog.best != null && prog.best <= QUEST_FAST[q.id] ? 1 : 0;
     case 'win1': case 'win3': return prog.wins || 0;
     case 'relay1': return prog.relay || 0;
     case 'dailytry': return prog.daily ? 1 : 0;
@@ -2130,7 +2148,7 @@ function renderQuests() {
     const act = claimed ? '<span class="tag tag-success">받음</span>'
       : `<button class="btn btn-sm ${done ? 'btn-primary' : ''}" data-quest="${q.id}" ${done ? '' : 'disabled'}>${done ? `${q.amt}P 받기` : `${q.amt}P`}</button>`;
     return `<li class="quest ${claimed ? 'claimed' : done ? 'ready' : ''}">`
-      + `<span class="tag ${q.attend ? 'tag-success' : q.hard ? 'tag-warning' : 'tag-blue'} qlv">${q.attend ? '출석' : q.hard ? '어려움' : '쉬움'}</span>`
+      + `<span class="tag ${q.attend ? 'tag-success' : 'tag-warning'} qlv">${q.attend ? '출석' : questStars(q.star)}</span>`
       + `<div class="qinfo"><div class="qtitle">${q.title}${q.sub ? `<span class="qsub">${q.sub}</span>` : ''}</div>`
       + `<div class="qbar" role="progressbar" aria-valuemin="0" aria-valuemax="${q.target}" aria-valuenow="${v}"><i style="width:${(v / q.target) * 100}%"></i></div>`
       + `<div class="qnum">${v} / ${q.target}</div></div>`
@@ -2187,6 +2205,8 @@ function recordQuestRound() {
       games: (p.games || 0) + 1,
       wins: (p.wins || 0) + (won ? 1 : 0),
       relay: (p.relay || 0) + (room.mode === 'relay' && arrived ? 1 : 0),
+      nohint: (p.nohint || 0) + (my.hints ? 0 : 1),
+      best: typeof my.elapsed === 'number' ? Math.min(p.best ?? Infinity, my.elapsed) : (p.best ?? null),
       modes: room.daily ? (p.modes || null) : { ...(p.modes || {}), [room.mode]: true },
       daily: p.daily || (!!room.daily && arrived),
     };
