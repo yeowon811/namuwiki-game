@@ -197,6 +197,45 @@ const HINT_MS = 30 * 1000;
 const HINT_CLICKS = 3;
 const hintPenaltyText = (mode, n) => (mode === 'clicks' ? `+${n * HINT_CLICKS}클릭` : `+${n * HINT_MS / 1000}초`);
 
+// 도착한 사람을 기록(힌트 페널티 포함) 순으로
+const podiumFinishers = () => room.players.filter((p) => p.status === 'finished').sort((a, b) => (a.elapsed || 0) - (b.elapsed || 0));
+// 힌트 카운트다운: 설정한 등수(1~3등) 안에 힌트 페널티가 붙은 기록이 있으면,
+// 그 기록(실제 도착 + 30초)만큼 시간이 지날 때까지 게임을 끝내지 않음 → 다른 사람이 그 안에 도착하면 앞설 수 있음
+// 기다리는 중이면 { until(서버 시각), who(아직 확정 안 된 사람들) }, 아니면 null
+function hintWait() {
+  if (!room || room.state !== 'playing' || room.mode === 'clicks' || room.daily) return null;
+  const k = room.winners || 1;
+  const fin = podiumFinishers();
+  if (fin.length < k) return null;
+  const t = now() - room.startAt;
+  const until = room.startAt + (fin[k - 1].elapsed || 0);
+  if (now() >= until) return null;
+  return { until, who: fin.slice(0, k).filter((p) => (p.elapsed || 0) > t) };
+}
+let hintWaitShown = null; // 이번 판에 안내 알림을 띄웠는지 (판 시작 시각)
+function renderHintWait() {
+  const box = $('#play-hintwait');
+  const w = room?.state === 'playing' ? hintWait() : null;
+  box.classList.toggle('hidden', !w);
+  if (!w) return;
+  const sec = Math.max(1, Math.ceil((w.until - now()) / 1000));
+  const names = w.who.map((p) => `${esc(p.name)}님`).join(', ');
+  const mine = w.who.some((p) => p.id === playerId);
+  const status = me()?.status;
+  const k = room.winners || 1;
+  const place = k > 1 ? `${k}등 안에 들어요` : '이겨요';
+  box.querySelector('.hw-sec').textContent = `${sec}초`;
+  box.querySelector('.hw-msg').innerHTML = mine
+    ? `힌트 페널티가 붙어서 아직 순위가 확정되지 않았어요. ${sec}초 안에 아무도 도착하지 못하면 순위가 그대로 확정돼요!`
+    : status === 'playing'
+      ? `${names}이 힌트를 쓰고 도착해서 기록에 페널티가 붙었어요. <b>${sec}초 안에 도착하면</b> 앞설 수 있어요! 못 하면 ${names}이 ${place}.`
+      : `${names}이 힌트를 쓰고 도착했어요. 페널티 시간만큼 ${sec}초 뒤에 순위가 확정돼요.`;
+  if (hintWaitShown !== room.startAt) {
+    hintWaitShown = room.startAt;
+    toast(mine ? '힌트 페널티 때문에 다른 사람에게 따라잡을 시간이 주어져요.' : `${w.who.map((p) => p.name).join(', ')}님이 힌트를 쓰고 도착했어요! ${sec}초 안에 도착하면 앞설 수 있어요.`, 'warning');
+  }
+}
+
 function renderProgress() {
   const el = $('#play-progress');
   const r = extRaceIsCurrent() ? ext.race : null;
@@ -652,10 +691,10 @@ function maintain() {
   if (room.state === 'playing' && now() >= room.startAt) {
     const allDone = !room.players.some((p) => p.status === 'playing');
     const timeUp = room.timeLimitMin > 0 && now() >= room.startAt + room.timeLimitMin * 60000;
-    // 타임어택은 1등이 나오는 순간 게임 종료
-    // 타임어택·릴레이는 설정한 등수(1~3등)까지 나오면 게임 종료
-    const winner = room.mode !== 'clicks'
-      && room.players.filter((p) => p.status === 'finished').length >= (room.winners || 1);
+    // 타임어택·릴레이는 설정한 등수(1~3등)까지 순위가 확정되면 게임 종료
+    // (힌트 페널티가 붙은 기록은 그 시간이 실제로 지나야 확정 → hintWait)
+    const fin = room.mode !== 'clicks' ? podiumFinishers() : [];
+    const winner = fin.length >= (room.winners || 1) && !hintWait();
     if (allDone || timeUp || winner) endRound();
   }
   const host = room.players.find((p) => p.id === room.hostId);
@@ -1503,7 +1542,8 @@ function render() {
     done.classList.toggle('hidden', status !== 'finished' && status !== 'gaveup');
     if (status === 'finished') {
       const rank = room.mode === 'clicks' ? 0 : ranking(room).filter((p) => p.status === 'finished').findIndex((p) => p.id === playerId) + 1;
-      const wait = room.mode !== 'clicks' && (room.winners || 1) > 1 ? `${room.winners}등까지 나오면 게임이 끝나요.` : '다른 사람들이 끝나길 기다리는 중…';
+      const wait = (my.hints && room.mode !== 'clicks' ? `힌트 페널티(${hintPenaltyText(room.mode, my.hints)})가 포함된 기록이라, 그 시간 안에 다른 사람이 도착하면 순위가 바뀔 수 있어요. ` : '')
+        + (room.mode !== 'clicks' && (room.winners || 1) > 1 ? `${room.winners}등까지 나오면 게임이 끝나요.` : '다른 사람들이 끝나길 기다리는 중…');
       done.innerHTML = `<div class="card done-box ok">${icon('check')}<div><p class="done-title">${rank ? `${rank}등으로 도착!` : '도착 완료!'} ${fmtTimePrecise(my.elapsed)} · ${my.clicks}클릭</p><p class="text-tertiary">${wait}</p></div></div>`;
     } else if (status === 'gaveup') {
       done.innerHTML = `<div class="card done-box out">${icon('close')}<div><p class="done-title">${my.dq ? `실격됐어요 (규칙 위반 ${my.violations || 2}회)` : '포기했어요'}</p><p class="text-tertiary">다른 사람들이 끝나길 기다리는 중…</p></div></div>`;
@@ -1607,6 +1647,10 @@ function tick() {
   if (ph === 'countdown') {
     $('#countdown').textContent = Math.max(1, Math.ceil((room.startAt - now()) / 1000));
   } else if (ph === 'playing') {
+    const hw = $('#play-hintwait').classList.contains('hidden') ? null : true;
+    renderHintWait();
+    // 카운트다운이 끝나면 바로 게임 종료 확인
+    if (hw && $('#play-hintwait').classList.contains('hidden')) maintain();
     const elapsed = now() - room.startAt;
     const timer = $('#play-timer');
     if (room.timeLimitMin) {

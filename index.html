@@ -180,7 +180,7 @@
             <ul class="bullets">
               <li>방장이 시작하면 <b>모든 참가자에게 같은</b> 시작 문서와 목표 문서가 랜덤으로 주어져요.</li>
               <li>나무위키 문서 <b>본문의 링크만</b> 클릭해서 목표 문서까지 이동하세요.</li>
-              <li><b>타임어택</b>: 가장 먼저 도착한 사람이 이기고, 1등이 나오는 순간 게임이 끝나요. 설정에서 2등이나 3등까지 나올 때 끝나도록 바꿀 수 있어요.</li>
+              <li><b>타임어택</b>: 가장 먼저 도착한 사람이 이기고, 1등이 나오는 순간 게임이 끝나요. 설정에서 2등이나 3등까지 나올 때 끝나도록 바꿀 수 있어요. 힌트를 쓴 사람은 기록에 30초가 더해지기 때문에, 힌트를 쓴 사람이 마지막 등수로 도착하면 남은 사람들에게 그 30초 동안 따라잡을 기회가 주어져요.</li>
               <li><b>최소 클릭</b>: 가장 적은 클릭으로 도착한 사람이 1등이에요. 클릭 수가 같으면 더 빨리 도착한 사람이 이겨요.</li>
               <li><b>릴레이</b>: 목표가 여러 곳이고 하나씩 공개돼요. 지금 목표에 도착해야 다음 목표가 나와요. 모든 목표를 가장 먼저 지나간 사람이 이기고, 그 순간 게임이 끝나요. <b>시작 문서로 돌아오기</b>를 켜면 마지막 목표가 처음 시작 문서가 돼요.</li>
               <li>확장 프로그램이 누른 링크와 도착을 자동으로 기록해요. 레이스 탭에서는 검색창이 막히고, 링크 클릭이 아닌 이동(주소창, 뒤로가기)은 경고로 표시돼요.</li>
@@ -397,6 +397,14 @@
         </div>
       </div>
 
+      <div id="play-hintwait" class="alert alert-warning alert-with-desc hidden">
+        <svg class="ic alert-icon"><use href="#i-clock"/></svg>
+        <div>
+          <div class="alert-message">힌트 카운트다운 <b class="hw-sec"></b></div>
+          <div class="alert-desc hw-msg"></div>
+        </div>
+      </div>
+
       <div id="play-actions" class="stack">
         <button id="btn-arrive" class="btn btn-success btn-lg btn-block">도착했어요!</button>
         <div id="auto-hint" class="alert alert-info hidden"><svg class="ic alert-icon"><use href="#i-info"/></svg><span>목표 문서에 들어가면 자동으로 도착 처리돼요. 나무위키 탭에서 링크만 눌러 이동하세요!</span></div>
@@ -505,6 +513,6 @@
   <div id="toast" class="message" role="status"></div>
 
   <!-- 코드를 바꾸면 ?v= 숫자를 올려서 브라우저 캐시에 남은 옛 파일을 쓰지 않게 함 -->
-  <script type="module" src="app.js?v=65"></script>
+  <script type="module" src="app.js?v=66"></script>
 </body>
 </html>
