@@ -86,7 +86,7 @@ const verGte = (a, b) => {
   return true;
 };
 const extOk = () => ext.ready && verGte(ext.version, EXT_MIN);
-const OLD_EXT_MSG = `자동 기록 확장 프로그램을 새 버전(${EXT_MIN})으로 다시 설치해야 게임에 참가할 수 있어요. 시작 화면의 '자동 기록 확장 프로그램 설치' 순서대로 ZIP 파일을 다시 내려받아 extension 폴더를 다시 로드해 주세요.`;
+const OLD_EXT_MSG = `자동 기록 확장 프로그램을 새 버전(${EXT_MIN})으로 바꿔야 게임에 참가할 수 있어요. 예전에 ZIP 파일로 설치했다면 삭제하고, 시작 화면의 '자동 기록 확장 프로그램 설치'에서 크롬 웹 스토어로 새로 설치해 주세요.`;
 const extMsg = () => (ext.ready ? OLD_EXT_MSG : NEED_EXT_MSG);
 const raceKey = () => (room ? `${room.code}/${room.round}` : null);
 const extRaceIsCurrent = () => ext.race && room && ext.race.code === room.code && ext.race.round === room.round && ext.race.playerId === playerId;
