@@ -37,6 +37,8 @@ const store = {
 };
 const newId = () => (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36));
 let playerId = null; // 로그인한 회원의 uid
+// 이 창(탭)의 번호: 같은 계정이 여러 창·기기에서 같은 방에 들어오면 마지막 창만 남김
+const TAB_ID = newId();
 
 // ---------- Firebase ----------
 const firebaseApp = initializeApp(firebaseConfig);
@@ -65,7 +67,7 @@ window.addEventListener('message', (e) => {
     ext.ready = true;
     ext.version = msg.version;
     ext.race = msg.race;
-    if (!extOk() && !ext.minWarned) { ext.minWarned = true; toast(OLD_EXT_MSG, 'warning'); }
+    if (!extOk() && !ext.minWarned) { ext.minWarned = true; toast(extMsg(), 'warning'); }
     render();
     syncExt();
   } else if (msg.type === 'STATE') {
@@ -91,9 +93,12 @@ const verGte = (a, b) => {
   for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0);
   return true;
 };
-const extOk = () => ext.ready && verGte(ext.version, EXT_MIN);
+// 자동 조종 브라우저(셀레니움 같은 봇)에서는 참가 불가
+const BOT = navigator.webdriver === true;
+const BOT_MSG = '자동 조종 브라우저(봇)에서는 게임에 참가할 수 없어요. 평소 쓰는 크롬으로 들어와 주세요.';
+const extOk = () => !BOT && ext.ready && verGte(ext.version, EXT_MIN);
 const OLD_EXT_MSG = `확장 프로그램을 새 버전(${EXT_MIN})으로 업데이트해야 게임에 참가할 수 있어요. 준비 막대의 '업데이트 방법'을 눌러 주세요.`;
-const extMsg = () => (ext.ready ? OLD_EXT_MSG : NEED_EXT_MSG);
+const extMsg = () => (BOT ? BOT_MSG : ext.ready ? OLD_EXT_MSG : NEED_EXT_MSG);
 // 준비한 사람의 확장 프로그램 버전이 충분한지 (예전 화면에서 준비한 사람은 버전이 없어서 '업데이트 필요')
 const playerExtOk = (p) => typeof p?.ext === 'string' && verGte(p.ext, EXT_MIN);
 const raceKey = () => (room ? `${room.code}/${room.round}` : null);
@@ -285,6 +290,7 @@ function cleanPlayer(id, p) {
   for (const k of PLAYER_BOOLS) if (k in o && typeof o[k] !== 'boolean') delete o[k];
   if ('status' in o && !PLAYER_STATUS.includes(o.status)) o.status = 'waiting';
   if ('ext' in o && (typeof o.ext !== 'string' || o.ext.length > 16)) delete o.ext;
+  if ('sid' in o && (typeof o.sid !== 'string' || o.sid.length > 64)) delete o.sid;
   if ('legTimes' in o) o.legTimes = Array.isArray(o.legTimes) ? o.legTimes.filter(isNum) : [];
   if ('path' in o) o.path = Array.isArray(o.path) ? o.path.map((t) => String(t ?? '')) : [];
   if ('steps' in o) o.steps = Array.isArray(o.steps) ? o.steps.filter((s) => s && typeof s === 'object').map((s) => ({ ...s, title: String(s.title ?? '') })) : [];
@@ -417,7 +423,7 @@ async function createRoom(name) {
     state: 'lobby',
     round: 0,
     createdAt: serverTimestamp(),
-    players: { [playerId]: { name, status: 'waiting', online: true, joinedAt: serverTimestamp(), char: myLook(), ...guestMark() } },
+    players: { [playerId]: { name, status: 'waiting', online: true, joinedAt: serverTimestamp(), char: myLook(), sid: TAB_ID, ...guestMark() } },
   });
   enterRoom(code);
 }
@@ -429,14 +435,14 @@ async function joinRoom(code, name) {
   if (snap.val().kicked?.[playerId]) throw new Error('방장이 이 방에서 내보냈어요.');
   if (snap.val().closed) throw new Error('방장이 없앤 방이에요.');
   if (players[playerId]?.name) {
-    const patch = { online: true, offlineSince: null, char: myLook() };
+    const patch = { online: true, offlineSince: null, char: myLook(), sid: TAB_ID };
     if (name) patch.name = name;
     await update(roomRef(code, 'players', playerId), patch);
   } else {
     if (!name) throw new Error('닉네임을 입력해주세요.');
     if (Object.keys(players).length >= MAX_PLAYERS) throw new Error(`방이 가득 찼어요. (최대 ${MAX_PLAYERS}명)`);
     // 게임 도중에 들어오면 'waiting'(관전) 상태로 있다가 다음 판부터 참가
-    const record = { name, status: 'waiting', online: true, joinedAt: serverTimestamp(), char: myLook(), ...guestMark() };
+    const record = { name, status: 'waiting', online: true, joinedAt: serverTimestamp(), char: myLook(), sid: TAB_ID, ...guestMark() };
     if (snap.val().locked && snap.val().hostId !== playerId) await joinLocked(code, record);
     else {
       try {
@@ -562,6 +568,14 @@ function enterRoom(code) {
       leaveLocal();
       if (v.closed === 'idle') toast(`${IDLE_CLOSE_MIN}분 동안 게임을 시작하지 않아서 방이 닫혔어요.`, 'warning');
       else toast(byMe ? '방을 없앴어요.' : '방장이 방을 없앴어요.', byMe ? 'success' : 'warning');
+      return;
+    }
+    // 같은 계정이 다른 창(또는 다른 기기)에서 이 방에 들어옴 → 이 창은 방에서 나감
+    const sid = v?.players?.[playerId]?.sid;
+    if (typeof sid === 'string' && sid !== TAB_ID) {
+      leaveLocal();
+      store.del('nr.room', ss);
+      toast('같은 계정으로 다른 창(또는 다른 기기)에서 이 방에 들어와서, 이 창은 방에서 나왔어요. 한 계정은 한 창에서만 할 수 있어요.', 'warning');
       return;
     }
     const kicked = !!v?.kicked?.[playerId];
@@ -1034,7 +1048,7 @@ async function startDaily(name) {
     public: false,
     daily: { date, start: pz.start, targets: pz.targets },
     createdAt: serverTimestamp(),
-    players: { [playerId]: { name, status: 'waiting', online: true, joinedAt: serverTimestamp(), char: myLook(), ...guestMark() } },
+    players: { [playerId]: { name, status: 'waiting', online: true, joinedAt: serverTimestamp(), char: myLook(), sid: TAB_ID, ...guestMark() } },
   });
   dailyAutoStart = code;
   enterRoom(code);
@@ -1147,7 +1161,7 @@ const allReady = () => notReady().length === 0;
 let readySending = false;
 function setReady(on) {
   if (!room || !me() || isHost() || readySending) return;
-  if (on && !extOk()) { if (ext.ready) openExtUpdate(); else toast(extMsg(), 'warning'); return; }
+  if (on && !extOk()) { if (ext.ready && !BOT) openExtUpdate(); else toast(extMsg(), 'warning'); return; }
   readySending = true;
   update(roomRef(room.code, 'players', playerId), { ready: on ? true : null, ext: on ? ext.version : null })
     .catch((e) => console.warn('[준비]', e.message))
@@ -1167,11 +1181,11 @@ function renderReady() {
   const bar = $('#ready-bar');
   showReadyBar(true);
   bar.querySelector('.ready-count').textContent = need.length ? `준비 ${done} / ${need.length}명` : '함께할 사람을 기다리는 중';
-  const oldExt = ext.ready && !extOk();
+  const oldExt = !BOT && ext.ready && !extOk();
   bar.querySelector('.ready-update').classList.toggle('hidden', !oldExt);
   if (oldExt && !extUpdateShown) { extUpdateShown = true; setTimeout(openExtUpdate, 300); }
   if (!host && my?.ready && extOk() && my.ext !== ext.version) update(roomRef(room.code, 'players', playerId), { ext: ext.version }).catch(() => {});
-  bar.querySelector('.ready-wait').textContent = !extOk() ? (ext.ready ? `버전 업데이트를 진행해 주세요. (지금 ${ext.version || '?'} → ${EXT_MIN} 이상 필요)` : '자동 기록 확장 프로그램이 있어야 참가할 수 있어요.')
+  bar.querySelector('.ready-wait').textContent = !extOk() ? (BOT ? '자동 조종 브라우저(봇)에서는 참가할 수 없어요.' : ext.ready ? `버전 업데이트를 진행해 주세요. (지금 ${ext.version || '?'} → ${EXT_MIN} 이상 필요)` : '자동 기록 확장 프로그램이 있어야 참가할 수 있어요.')
     : waiting.length ? `아직: ${waiting.map((p) => (p.ready ? `${p.name}(업데이트 필요)` : p.name)).join(', ')}` : need.length ? '모두 준비 완료!' : '';
   bar.classList.toggle('no-ext', !extOk());
   bar.classList.toggle('all', need.length > 0 && ok);
@@ -1180,7 +1194,7 @@ function renderReady() {
   const on = !!my?.ready;
   btn.classList.toggle('hidden', host);
   bar.querySelector('.ready-auto').classList.toggle('hidden', host);
-  btn.textContent = on ? '✓ 준비 완료' : extOk() ? '준비하기' : ext.ready ? '확장 프로그램 업데이트 필요' : '확장 프로그램 필요';
+  btn.textContent = on ? '✓ 준비 완료' : extOk() ? '준비하기' : BOT ? '참가할 수 없어요' : ext.ready ? '확장 프로그램 업데이트 필요' : '확장 프로그램 필요';
   btn.title = on ? '한 번 더 누르면 준비를 취소해요' : extOk() ? '' : extMsg();
   btn.classList.toggle('btn-primary', !on);
   btn.classList.toggle('btn-success', on);

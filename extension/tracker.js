@@ -48,7 +48,7 @@ export function newRace(info) {
     returnTo: null, // '이전 문서로'를 눌러 돌아가는 중인 문서 { title, t }
     hints: [], // 힌트를 본 목표 번호 (릴레이는 목표마다 따로)
     hintText: {}, // 목표 번호 → 힌트 내용
-    strikes: [], // 위반 { kind: 'back' | 'other' | 'find', title, t }
+    strikes: [], // 위반 { kind: 'back' | 'other' | 'find' | 'auto' | 'bot', title, t }
     findDocs: [], // Ctrl+F를 시도한 문서 (문서마다 1회만 셈)
     pendingRestore: null, // 위반 이동을 되돌릴 문서
     dq: false, // 실격
@@ -70,6 +70,26 @@ export function addStrike(race, kind, title, t) {
   race.strikes = race.strikes || [];
   race.strikes.push({ kind, title, t });
   if (race.strikes.length >= MAX_STRIKES) { race.dq = true; race.dqT = t; }
+}
+
+// 사람이 아닌 클릭(프로그램이 누른 클릭): 같은 문서에서는 1회만 셈 (막은 뒤 위반 1회)
+export function strikeAuto(race, title, t) {
+  if (race.finished || race.dq) return false;
+  race.autoDocs = race.autoDocs || [];
+  const key = norm(title || '');
+  if (race.autoDocs.includes(key)) return false;
+  race.autoDocs.push(key);
+  addStrike(race, 'auto', title, t);
+  return true;
+}
+// 자동 조종 브라우저(봇): 바로 실격
+export function strikeBot(race, title, t) {
+  if (race.finished || race.dq) return false;
+  race.strikes = race.strikes || [];
+  race.strikes.push({ kind: 'bot', title, t });
+  race.dq = true;
+  race.dqT = t;
+  return true;
 }
 
 // Ctrl+F 시도: 같은 문서에서는 1회만 셈

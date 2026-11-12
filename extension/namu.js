@@ -89,6 +89,14 @@
         return;
       }
     }
+    // 사람이 아닌 클릭(프로그램이 누른 클릭)은 막고 위반 1회 (문서마다 1회)
+    if (race && a && !e.isTrusted) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      send({ type: 'STRIKE', kind: 'auto', title: currentTitle() }).then((res) => { if (res?.race) setRace(res.race); });
+      toast('🤖 프로그램이 누른 클릭은 쓸 수 없어요.', 4000, 'warning');
+      return;
+    }
     if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey) return; // 새 탭으로 열기는 제외
     if (isDocLink(a)) {
       clickT = Date.now();
@@ -199,6 +207,7 @@
   // ---------- HUD ----------
   let host, root, timer, toastTimer;
   let seenFinished = null; // 이미 알림을 띄운 도착자
+  let botSent = null; // 자동 조종 브라우저를 알린 판 (판마다 한 번)
   let boardOpen = sessionStorage.getItem('nr-board-open') !== '0';
   let chatOpen = sessionStorage.getItem('nr-chat-open') !== '0';
   let chatPopTimer;
@@ -652,6 +661,11 @@
     if (!race) return removeHud();
     const sameRace = prevKey === `${race.code}/${race.round}`;
     if (!sameRace) seenFinished = null;
+    // 자동 조종 브라우저(셀레니움 같은 봇)로 레이스를 하면 바로 실격
+    if (navigator.webdriver === true && !race.finished && !race.dq && botSent !== `${race.code}/${race.round}`) {
+      botSent = `${race.code}/${race.round}`;
+      send({ type: 'STRIKE', kind: 'bot', title: currentTitle() }).then((res) => { if (res?.race) setRace(res.race); });
+    }
     ensureHud();
     root.querySelector('.wrap').hidden = false;
     root.querySelector('.end').hidden = true;
@@ -673,10 +687,11 @@
     // 위반 알림
     if (sameRace && race.violations > prevStrikes) {
       const last = race.strikes?.[race.strikes.length - 1];
-      const what = { back: '뒤로가기는', other: '링크가 아닌 이동(주소창 등)은', find: '찾기(Ctrl+F)는' }[last?.kind] || '규칙 위반은';
-      const whatName = { back: '뒤로가기', other: '링크가 아닌 이동', find: '찾기(Ctrl+F)' }[last?.kind] || '규칙 위반';
-      const fix = last?.kind === 'find' ? '' : ' 원래 문서로 되돌렸어요.';
-      if (race.dq) stickyToast(`🚫 실격! 규칙 위반이 ${race.violations}회예요. (마지막: ${whatName})`, 8000, 'warning');
+      const what = { back: '뒤로가기는', other: '링크가 아닌 이동(주소창 등)은', find: '찾기(Ctrl+F)는', auto: '프로그램이 누른 클릭은', bot: '자동 조종 브라우저는' }[last?.kind] || '규칙 위반은';
+      const whatName = { back: '뒤로가기', other: '링크가 아닌 이동', find: '찾기(Ctrl+F)', auto: '프로그램 클릭', bot: '자동 조종 브라우저' }[last?.kind] || '규칙 위반';
+      const fix = ['find', 'auto', 'bot'].includes(last?.kind) ? '' : ' 원래 문서로 되돌렸어요.';
+      if (race.dq && last?.kind === 'bot') stickyToast('🚫 실격! 자동 조종 브라우저(봇)로는 게임할 수 없어요.', 8000, 'warning');
+      else if (race.dq) stickyToast(`🚫 실격! 규칙 위반이 ${race.violations}회예요. (마지막: ${whatName})`, 8000, 'warning');
       else if (race.violations >= (race.maxStrikes || 2) - 1) stickyToast(`⚠️ ${what} 금지예요!${fix} 한 번 더 위반하면 실격이에요. (${race.violations}/${race.maxStrikes || 2})`, 6000, 'warning');
       else stickyToast(`⚠️ ${what} 금지예요!${fix} (위반 ${race.violations}/${race.maxStrikes || 2})`, 5000, 'warning');
     } else if (sameRace && race.dq && !prevDq) toast('🚫 실격됐어요.', 6000, 'warning');

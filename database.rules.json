@@ -298,6 +298,12 @@
               "run": {
                 ".validate": "newData.isBoolean()"
               }
+            },
+            "sid": {
+              ".validate": "newData.isString() && newData.val().length <= 64"
+            },
+            "ext": {
+              ".validate": "newData.isString() && newData.val().length <= 16"
             }
           }
         },

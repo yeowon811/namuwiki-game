@@ -1,4 +1,4 @@
-import { newRace, applyNav, summary, pageFromUrl, requestReturn, useHint, strikeFind, AWAY_MS } from './tracker.js';
+import { newRace, applyNav, summary, pageFromUrl, requestReturn, useHint, strikeFind, strikeAuto, strikeBot, AWAY_MS } from './tracker.js';
 
 const namuUrl = (t) => 'https://namu.wiki/w/' + encodeURIComponent(t);
 
@@ -185,7 +185,11 @@ async function handle(msg, sender) {
     case 'STRIKE': {
       // 레이스 탭에서 Ctrl+F 등 금지 행동 시도
       if (!race || tabId !== race.tabId) return { race: null };
-      if (msg.kind === 'find' && strikeFind(race, msg.title, Date.now())) {
+      const t = Date.now();
+      const hit = msg.kind === 'find' ? strikeFind(race, msg.title, t)
+        : msg.kind === 'auto' ? strikeAuto(race, msg.title, t)
+          : msg.kind === 'bot' ? strikeBot(race, msg.title, t) : false;
+      if (hit) {
         await save(race);
         notifyGame(race);
       }
