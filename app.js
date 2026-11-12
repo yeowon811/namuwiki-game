@@ -84,7 +84,7 @@ window.addEventListener('message', (e) => {
 // 자동 기록 확장 프로그램이 있어야 준비·시작·오늘의 챔피언 도전을 할 수 있음
 const NEED_EXT_MSG = '자동 기록 확장 프로그램을 설치해야 게임에 참가할 수 있어요. 시작 화면의 \'자동 기록 확장 프로그램 설치\'를 참고해 주세요.';
 // 확장 프로그램이 이 버전보다 낮으면 게임에 참가할 수 없음 (규칙이 바뀐 버전: 1.7.0 = '이전 문서로'는 막다른 문서에서만)
-const EXT_MIN = '1.7.0'; // 1.8.0 자동 업데이트가 퍼질 때까지 잠시 낮춤
+const EXT_MIN = '1.8.0';
 const verGte = (a, b) => {
   const x = String(a || '0').split('.').map(Number);
   const y = String(b).split('.').map(Number);
