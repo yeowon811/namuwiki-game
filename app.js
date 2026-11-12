@@ -2216,7 +2216,28 @@ $('#signup-form').addEventListener('submit', (e) => {
     signingUp = true;
     // 닉네임 중복은 계정을 만든 뒤 확인 (닉네임 목록은 로그인해야 읽을 수 있음). 겹치면 만든 계정을 지움
     let cred;
-    try { cred = await createUserWithEmailAndPassword(auth, idToEmail(id), pw); } catch (ce) { signingUp = false; throw ce; }
+    try {
+      cred = await createUserWithEmailAndPassword(auth, idToEmail(id), pw);
+    } catch (ce) {
+      if (!/email-already-in-use/.test(ce?.code || '')) { signingUp = false; throw ce; }
+      // 이미 있는 로그인 계정: 가입하다 끊겼거나 회원 정보만 지워진 아이디면, 입력한 비밀번호(또는 예전 아이디만 방식)로
+      // 들어가지는 경우에 한해 그 계정으로 이어서 가입 (비밀번호를 모르면 남의 계정을 쓸 수 없음)
+      let legacy = false;
+      cred = await signInWithEmailAndPassword(auth, idToEmail(id), pw).catch(() => null);
+      if (!cred) {
+        cred = await signInWithEmailAndPassword(auth, idToEmail(id), idToPassword(id)).catch(() => null);
+        legacy = !!cred;
+      }
+      if (!cred) { signingUp = false; throw ce; }
+      if ((await get(ref(db, `users/${cred.user.uid}`))).exists()) {
+        // 진짜 회원이었음 → 그냥 로그인
+        signingUp = false;
+        watchProfile(cred.user.uid);
+        toast('이미 가입된 아이디라서 로그인했어요.', 'info');
+        return;
+      }
+      if (legacy) await updatePassword(cred.user, pw);
+    }
     rememberPassword(cred.user.uid, pw);
     $('#su-pw').value = ''; $('#su-pw2').value = '';
     const uid = cred.user.uid;
@@ -2240,7 +2261,8 @@ $('#signup-form').addEventListener('submit', (e) => {
       }
     } catch (dbErr) {
       // 데이터 저장에 실패하면 만든 로그인 계정도 지워서 다시 가입할 수 있게 함
-      await cred.user.delete().catch(() => {});
+      // (지우기도 실패하면 로그인 계정이 남지만, 같은 아이디·비밀번호로 다시 가입하면 이어서 가입됨)
+      await (cred.user.delete ? cred.user.delete() : deleteUser(cred.user)).catch((e) => console.warn('[가입 정리]', e));
       throw dbErr;
     } finally {
       signingUp = false;
@@ -2430,7 +2452,7 @@ function showHome() {
     if (signingUp) return show('loading');
     // 가입 정보가 없음 (거절되었거나 지워짐)
     show('auth');
-    $('#auth-error').textContent = '가입 정보가 없어요. 관리자가 삭제했을 수 있어요.';
+    $('#auth-error').textContent = '가입 정보가 없어요. 회원가입 탭에서 같은 아이디와 비밀번호로 가입하면 이어서 가입돼요.';
     return;
   }
   if (!profile.approved) {
