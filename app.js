@@ -1851,16 +1851,16 @@ const idToEmail = (id) => `${id}@${EMAIL_DOMAIN}`;
 // 새 비밀번호를 만들 때만 씀 (users/<uid>/pwSet이 true가 되면 이 비밀번호는 더 이상 맞지 않음)
 const idToPassword = (id) => `namurace-${id}-login`;
 const PW_MIN = 6;
-// 손님(로그인 없이): Firebase 익명 로그인. 이름 뒤에 '(손님)'이 붙고, 포인트·상점·퀘스트·오늘의 챔피언은 못 씀
-const GUEST_TAG = '(손님)';
+// 게스트(로그인 없이): Firebase 익명 로그인. 이름 뒤에 '(게스트)'가 붙고, 포인트·상점·퀘스트·오늘의 챔피언은 못 씀
+const GUEST_TAG = '(게스트)';
 const GUEST_KEY = 'nr.guestName';
 const isGuest = () => !!authUser?.isAnonymous;
 const guestMark = () => (isGuest() ? { guest: true } : {});
-// 손님은 1시간까지: 시간이 지나면 손님 화면이 스스로 방에서 나가고 손님 계정을 지움 (게임 중이면 판이 끝난 뒤)
+// 게스트는 1시간까지: 시간이 지나면 게스트 화면이 스스로 방에서 나가고 게스트 계정을 지움 (게임 중이면 판이 끝난 뒤)
 const GUEST_LIMIT_MS = 60 * 60 * 1000;
 const GUEST_WARN_MS = 5 * 60 * 1000;
 const GUEST_START_KEY = 'nr.guestStart';
-// 연결이 끊긴 손님은 방장이 방에서 지움 (창을 닫은 손님의 캐릭터가 남지 않게). 새로고침은 금방 다시 연결되니 여유를 둠
+// 연결이 끊긴 게스트는 방장이 방에서 지움 (창을 닫은 게스트의 캐릭터가 남지 않게). 새로고침은 금방 다시 연결되니 여유를 둠
 const GUEST_GONE_MS = 5 * 1000;
 const GUEST_GONE_PLAYING_MS = 60 * 1000;
 const guestStart = () => Number(store.get(GUEST_START_KEY, ss)) || Date.now();
@@ -1872,7 +1872,7 @@ async function checkGuestTime() {
   const left = guestLeftMs();
   if (left <= GUEST_WARN_MS && !guestWarned) {
     guestWarned = true;
-    toast(`손님 시간이 ${Math.max(1, Math.ceil(left / 60000))}분 남았어요. 계속 하려면 회원가입해 주세요.`, 'warning');
+    toast(`게스트 시간이 ${Math.max(1, Math.ceil(left / 60000))}분 남았어요. 계속 하려면 회원가입해 주세요.`, 'warning');
   }
   const note = $('#guest-left');
   if (note) note.textContent = left > 0 ? `남은 시간 ${Math.ceil(left / 60000)}분` : '';
@@ -1885,14 +1885,14 @@ async function checkGuestTime() {
     store.del(GUEST_START_KEY, ss);
     const u = auth.currentUser;
     if (u?.isAnonymous) await deleteUser(u).catch(() => signOut(auth));
-    setTimeout(() => toast('손님 시간(1시간)이 끝났어요. 회원가입하면 계속 할 수 있어요.', 'info'), 300);
+    setTimeout(() => toast('게스트 시간(1시간)이 끝났어요. 회원가입하면 계속 할 수 있어요.', 'info'), 300);
   } finally {
     guestEnding = false;
     guestWarned = false;
   }
 }
 setInterval(checkGuestTime, 15000);
-// 방장: 창을 닫고 나간 손님 정리
+// 방장: 창을 닫고 나간 게스트 정리
 let guestCleanupTimer = null;
 let guestCleanupAt = 0;
 function cleanupGoneGuests() {
@@ -1900,11 +1900,11 @@ function cleanupGoneGuests() {
   const limit = room.state === 'playing' ? GUEST_GONE_PLAYING_MS : GUEST_GONE_MS;
   const off = room.players.filter((p) => p.guest && p.id !== playerId && !p.online && p.offlineSince);
   const gone = off.filter((p) => now() - p.offlineSince > limit);
-  // 아직 시간이 안 된 손님은 시간이 되자마자 다시 확인 (5초마다 도는 정리를 기다리지 않음)
+  // 아직 시간이 안 된 게스트는 시간이 되자마자 다시 확인 (5초마다 도는 정리를 기다리지 않음)
   const wait = off.filter((p) => !gone.includes(p)).map((p) => p.offlineSince + limit - now());
   if (wait.length) {
     const at = Date.now() + Math.max(200, Math.min(...wait) + 200);
-    // 더 빨리 확인해야 하는 손님이 생기면 타이머를 앞당김
+    // 더 빨리 확인해야 하는 게스트가 생기면 타이머를 앞당김
     if (!guestCleanupTimer || at < guestCleanupAt - 100) {
       clearTimeout(guestCleanupTimer);
       guestCleanupAt = at;
@@ -1914,13 +1914,13 @@ function cleanupGoneGuests() {
   if (!gone.length) return;
   const fix = {};
   for (const p of gone) fix[`players/${p.id}`] = null;
-  update(roomRef(room.code), fix).catch((e) => console.warn('[손님 정리]', e.message));
+  update(roomRef(room.code), fix).catch((e) => console.warn('[게스트 정리]', e.message));
 }
-store.del(GUEST_KEY); // 예전에 브라우저에 남겨 둔 손님 이름 정리
-// 손님 로그인과 이름은 그 탭(창)에만 남음: 새로고침하면 그대로, 창을 닫으면 사라짐
+store.del(GUEST_KEY); // 예전에 브라우저에 남겨 둔 게스트 이름 정리
+// 게스트 로그인과 이름은 그 탭(창)에만 남음: 새로고침하면 그대로, 창을 닫으면 사라짐
 function guestProfile() {
   let name = store.get(GUEST_KEY, ss) || '';
-  if (!name) { name = `손님${Math.floor(100 + Math.random() * 900)}`; store.set(GUEST_KEY, name, ss); }
+  if (!name) { name = `게스트${Math.floor(100 + Math.random() * 900)}`; store.set(GUEST_KEY, name, ss); }
   return { nick: `${name}${GUEST_TAG}`, approved: true, pwSet: true, rcv: 'guest', rcvV: RCV_VER, points: 0, stats: {}, guest: true };
 }
 let authUser = null;
@@ -2121,7 +2121,7 @@ $('#qa-form').addEventListener('submit', async (e) => {
   }
 });
 
-// 손님으로 하기
+// 게스트로 하기
 $('#guest-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const name = cleanName($('#guest-name').value);
@@ -2134,17 +2134,17 @@ $('#guest-form').addEventListener('submit', async (e) => {
   btn.disabled = true;
   try {
     store.set(GUEST_KEY, name, ss);
-    await setPersistence(auth, browserSessionPersistence); // 창을 닫으면 손님 로그인 기록이 사라짐
+    await setPersistence(auth, browserSessionPersistence); // 창을 닫으면 게스트 로그인 기록이 사라짐
     store.set(GUEST_START_KEY, String(Date.now()), ss);
     await signInAnonymously(auth);
   } catch (err) {
-    console.warn('[손님]', err);
-    errEl.textContent = /operation-not-allowed|admin-restricted/.test(err?.code || '') ? '지금은 손님으로 할 수 없어요. 관리자에게 알려 주세요. (Firebase 익명 로그인이 꺼져 있음)' : authMessage(err);
+    console.warn('[게스트]', err);
+    errEl.textContent = /operation-not-allowed|admin-restricted/.test(err?.code || '') ? '지금은 게스트로 할 수 없어요. 관리자에게 알려 주세요. (Firebase 익명 로그인이 꺼져 있음)' : authMessage(err);
   } finally {
     btn.disabled = false;
   }
 });
-// 손님 → 로그인/회원가입 화면으로 (손님 계정은 지움)
+// 게스트 → 로그인/회원가입 화면으로 (게스트 계정은 지움)
 async function leaveGuest() {
   if (room) return;
   await stopPresence();
@@ -2203,7 +2203,7 @@ $('#signup-form').addEventListener('submit', (e) => {
   if (!nick) return err('닉네임을 입력해주세요.');
   if (nickLen(nick) > NICK_MAX) return err(`닉네임은 ${NICK_MAX}글자까지 쓸 수 있어요.`);
   if (hasBad(nick)) return err('닉네임에 쓸 수 없는 말이 들어 있어요. 다른 닉네임을 써 주세요.');
-  if (nick.includes('손님')) return err("닉네임에 '손님'은 쓸 수 없어요.");
+  if (/게스트|손님/.test(nick)) return err("닉네임에 '게스트'는 쓸 수 없어요.");
   if (!ID_RE.test(id)) return err('아이디는 영어 소문자, 숫자, _ 로 4~16자예요.');
   const pw = $('#su-pw').value;
   if (pw.length < PW_MIN) return err(`비밀번호는 ${PW_MIN}자 이상이어야 해요.`);
@@ -2275,7 +2275,7 @@ function armPresence() {
   onDisconnect(ref(db, `presence/${presenceUid}/lastSeen`)).set(serverTimestamp());
 }
 function syncPresence() {
-  if (isGuest()) return; // 손님은 회원 전용 기능을 쓰지 않음
+  if (isGuest()) return; // 게스트는 회원 전용 기능을 쓰지 않음
   const uid = authUser?.uid;
   if (!uid || !netConnected || !profile?.approved) return;
   if (!presenceRef || presenceUid !== uid) {
@@ -2315,7 +2315,7 @@ onValue(ref(db, '.info/connected'), (s) => {
 let nickConflict = false;
 let nickCheckedFor = null;
 async function checkMyNick() {
-  if (isGuest()) return; // 손님은 회원 전용 기능을 쓰지 않음
+  if (isGuest()) return; // 게스트는 회원 전용 기능을 쓰지 않음
   const uid = authUser?.uid;
   if (!uid || !profile?.nick || !profile.approved) return;
   const sig = `${uid}/${nickKey(profile.nick)}`;
@@ -2398,7 +2398,7 @@ onAuthStateChanged(auth, (user) => {
   playerId = user.uid;
   document.body.classList.toggle('guest', !!user.isAnonymous);
   if (user.isAnonymous) {
-    // 손님: 계정 정보가 없으므로 이 기기에서만 쓰는 프로필 (공지는 받음)
+    // 게스트: 계정 정보가 없으므로 이 기기에서만 쓰는 프로필 (공지는 받음)
     profileUnsubs = [onValue(ref(db, 'notice'), (s) => { notice = s.val(); maybeShowNotice(); }, () => {})];
     profile = guestProfile();
     profileLoaded = true;
@@ -2510,7 +2510,7 @@ $('#nick-form').addEventListener('submit', async (e) => {
   if (!nick) { $('#nick-error').textContent = '새 닉네임을 입력해주세요.'; return; }
   if (nickLen(nick) > NICK_MAX) { $('#nick-error').textContent = `닉네임은 ${NICK_MAX}글자까지 쓸 수 있어요.`; return; }
   if (hasBad(nick)) { $('#nick-error').textContent = '닉네임에 쓸 수 없는 말이 들어 있어요. 다른 닉네임을 써 주세요.'; return; }
-  if (nick.includes('손님')) { $('#nick-error').textContent = "닉네임에 '손님'은 쓸 수 없어요."; return; }
+  if (/게스트|손님/.test(nick)) { $('#nick-error').textContent = "닉네임에 '게스트'는 쓸 수 없어요."; return; }
   if (nick === profile.nick) { $('#nick-error').textContent = '지금 닉네임과 같아요.'; return; }
   const cost = nickConflict ? 0 : 300;
   if ((profile.points || 0) < cost) { $('#nick-error').textContent = '포인트가 부족해요.'; return; }
@@ -2543,7 +2543,7 @@ const PRIZE = [200, 150, 100]; // 오늘의 챔피언 1·2·3등
 const prizesFor = (n) => (n >= 4 ? [100, 50, 30] : n === 3 ? [50, 30] : n === 2 ? [30] : []);
 let claimedKey = null;
 async function claimRoundRewards() {
-  if (isGuest()) return; // 손님은 회원 전용 기능을 쓰지 않음
+  if (isGuest()) return; // 게스트는 회원 전용 기능을 쓰지 않음
   if (!room || room.state !== 'results' || room.daily || !authUser) return;
   const key = `${room.code}/${room.round}`;
   if (claimedKey === key) return;
@@ -2705,7 +2705,7 @@ async function claimQuest(id) {
 // 판이 끝나면 퀘스트 진행 기록 (끝까지 참가한 판만, 한 판에 한 번)
 let questRoundKey = null;
 function recordQuestRound() {
-  if (isGuest()) return; // 손님은 회원 전용 기능을 쓰지 않음
+  if (isGuest()) return; // 게스트는 회원 전용 기능을 쓰지 않음
   if (!room || room.state !== 'results' || !authUser) return;
   const key = `${room.rid || room.code}/${room.round}`;
   if (questRoundKey === key) return;
@@ -2748,7 +2748,7 @@ function prevDateKey(date) {
 }
 let dailyPayChecked = null;
 async function payDailyChampions() {
-  if (isGuest()) return; // 손님은 회원 전용 기능을 쓰지 않음
+  if (isGuest()) return; // 게스트는 회원 전용 기능을 쓰지 않음
   const date = prevDateKey(todayKey());
   if (dailyPayChecked === date) return;
   dailyPayChecked = date;
@@ -2784,7 +2784,7 @@ const STALE_ROOM_MS = 2 * 3600 * 1000;
 const CLEANUP_EVERY_MS = 30 * 60 * 1000;
 let cleanupTried = false;
 async function cleanupStaleRooms() {
-  if (isGuest()) return; // 손님은 회원 전용 기능을 쓰지 않음
+  if (isGuest()) return; // 게스트는 회원 전용 기능을 쓰지 않음
   if (cleanupTried) return;
   cleanupTried = true;
   try {
